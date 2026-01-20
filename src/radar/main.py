@@ -34,20 +34,42 @@ def note(text: str):
 
 @app.command()
 def ingest(
+    source: Optional[str] = typer.Argument(
+        None, help="Source to ingest: a file path or '-' for stdin"
+    ),
     file: Optional[typer.FileText] = typer.Option(
-        None, "--file", "-f", help="File to ingest (defaults to stdin if piped)"
+        None, "--file", "-f", help="Legacy file option (preferred: radar ingest [path])"
     ),
 ):
     """Ingest massive textual intelligence via stdin or file."""
     text = ""
-    if file:
-        text = file.read()
-    elif not sys.stdin.isatty():
-        # Read from stdin if piped
+
+    # 1. Check positional argument
+    if source == "-":
+        if sys.stdin.isatty():
+            console.print(
+                "[bold blue]Ready for input... (Press Ctrl-D when finished)[/bold blue]"
+            )
         text = sys.stdin.read()
+    elif source:
+        try:
+            with open(source, "r") as f:
+                text = f.read()
+        except Exception as e:
+            console.print(f"[bold red]Error reading file {source}:[/bold red] {e}")
+            raise typer.Exit(code=1)
+
+    # 2. Check legacy --file option if positional wasn't used
+    elif file:
+        text = file.read()
+
+    # 3. Check for piped input (automatic)
+    elif not sys.stdin.isatty():
+        text = sys.stdin.read()
+
     else:
         console.print(
-            "[bold red]Error:[/bold red] No input provided. Pipe text to this command or use --file."
+            "[bold red]Error:[/bold red] No input provided. Use 'radar ingest -', 'radar ingest [path]', or pipe text."
         )
         raise typer.Exit(code=1)
 
@@ -64,7 +86,3 @@ def ingest(
             f"[bold green] ingested:[/bold green] {signal.title}\n[dim]Length: {len(signal.content)} chars[/dim]"
         )
     )
-
-
-if __name__ == "__main__":
-    app()

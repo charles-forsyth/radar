@@ -25,6 +25,14 @@ def test_ingest_command_stdin():
     assert "Stdin content here" in result.stdout or "Length" in result.stdout
 
 
+def test_ingest_command_hyphen():
+    # Simulate 'radar ingest -'
+    result = runner.invoke(app, ["ingest", "-"], input="Hyphen content")
+    assert result.exit_code == 0
+    assert "ingested:" in result.stdout
+    assert "Hyphen content" in result.stdout or "Length" in result.stdout
+
+
 def test_ingest_command_empty():
     result = runner.invoke(app, ["ingest"], input="")
     assert result.exit_code == 1
