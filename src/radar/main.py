@@ -2,6 +2,7 @@ import typer
 import sys
 import asyncio
 import httpx
+import click
 from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
@@ -71,9 +72,9 @@ def ingest(
             if source == "-":
                 if sys.stdin.isatty():
                     console.print(
-                        "[bold blue]Ready for input... (Press Ctrl-D when finished)[/bold blue]"
+                        "[bold blue]Ready for input... (Type your text, then press Ctrl-D on a new line to finish)[/bold blue]"
                     )
-                text = sys.stdin.read()
+                text = click.get_text_stream("stdin").read()
             elif source:
                 try:
                     with open(source, "r") as f:
@@ -86,7 +87,7 @@ def ingest(
             elif file:
                 text = file.read()
             elif not sys.stdin.isatty():
-                text = sys.stdin.read()
+                text = click.get_text_stream("stdin").read()
             else:
                 console.print(
                     "[bold red]Error:[/bold red] No input provided. Use 'radar ingest -', 'radar ingest [path]', or pipe text."
