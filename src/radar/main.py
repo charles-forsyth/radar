@@ -78,11 +78,45 @@ def ingest(
         raise typer.Exit(code=1)
 
     agent = TextIngestAgent()
-    # Since we are in a synchronous Typer command, we need to run async code
-    signal = asyncio.run(agent.ingest(text))
 
-    console.print(
-        Panel(
-            f"[bold green] ingested:[/bold green] {signal.title}\n[dim]Length: {len(signal.content)} chars[/dim]"
-        )
+    # Run async ingest and save
+    async def process_signal():
+        from radar.db.engine import async_session
+
+        signal = await agent.ingest(text)
+
+        # Persist to DB
+        async with async_session() as session:
+            session.add(signal)
+            await session.commit()
+            await session.refresh(signal)
+        return signal
+
+    signal = asyncio.run(process_signal())
+
+    # Improved Feedback UI
+    from rich.table import Table
+    from rich import box
+
+    table = Table(
+        box=box.ROUNDED,
+        show_header=False,
+        title="[bold green]Signal Ingested Successfully[/bold green]",
     )
+    table.add_row("[bold cyan]ID[/bold cyan]", str(signal.id))
+    table.add_row("[bold cyan]Title[/bold cyan]", signal.title)
+    table.add_row(
+        "[bold cyan]Date[/bold cyan]", signal.date.strftime("%Y-%m-%d %H:%M:%S")
+    )
+    table.add_row("[bold cyan]Source[/bold cyan]", signal.source)
+    table.add_row("[bold cyan]Length[/bold cyan]", f"{len(signal.content)} chars")
+
+    # Add a preview snippet
+    snippet = (
+        signal.content[:200].replace("\n", " ") + "..."
+        if len(signal.content) > 200
+        else signal.content
+    )
+    table.add_row("[bold cyan]Preview[/bold cyan]", f"[dim]{snippet}[/dim]")
+
+    console.print(table)

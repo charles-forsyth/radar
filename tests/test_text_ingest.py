@@ -1,9 +1,21 @@
-import pytest
 from radar.core.ingest import TextIngestAgent
 from radar.main import app
 from typer.testing import CliRunner
+import pytest
+from unittest.mock import patch, AsyncMock
 
 runner = CliRunner()
+
+
+@pytest.fixture
+def mock_db_session():
+    with patch("radar.db.engine.async_session") as mock_session_cls:
+        mock_session = AsyncMock()
+        mock_session_cls.return_value = mock_session
+        # Mock context manager
+        mock_session.__aenter__.return_value = mock_session
+        mock_session.__aexit__.return_value = None
+        yield mock_session
 
 
 @pytest.mark.asyncio
@@ -17,19 +29,24 @@ async def test_text_ingest_agent():
     assert signal.source == "stdin"
 
 
-def test_ingest_command_stdin():
+def test_ingest_command_stdin(mock_db_session):
     # Simulate stdin input
     result = runner.invoke(app, ["ingest"], input="Stdin content here")
+    if result.exit_code != 0:
+        print(result.stdout)
+        print(result.exception)
     assert result.exit_code == 0
-    assert "ingested:" in result.stdout
+    assert "Signal Ingested Successfully" in result.stdout
     assert "Stdin content here" in result.stdout or "Length" in result.stdout
 
 
-def test_ingest_command_hyphen():
+def test_ingest_command_hyphen(mock_db_session):
     # Simulate 'radar ingest -'
     result = runner.invoke(app, ["ingest", "-"], input="Hyphen content")
+    if result.exit_code != 0:
+        print(result.stdout)
     assert result.exit_code == 0
-    assert "ingested:" in result.stdout
+    assert "Signal Ingested Successfully" in result.stdout
     assert "Hyphen content" in result.stdout or "Length" in result.stdout
 
 
