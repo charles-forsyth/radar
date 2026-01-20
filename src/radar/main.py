@@ -4,7 +4,7 @@ import asyncio
 from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
-from radar.core.ingest import TextIngestAgent
+from radar.core.ingest import TextIngestAgent, WebIngestAgent
 
 app = typer.Typer(name="radar", help="📡 Personal Industry Intelligence Brain")
 console = Console()
@@ -35,64 +35,65 @@ def note(text: str):
 @app.command()
 def ingest(
     source: Optional[str] = typer.Argument(
-        None, help="Source to ingest: a file path or '-' for stdin"
+        None, help="Source to ingest: a file path, URL, or '-' for stdin"
     ),
     file: Optional[typer.FileText] = typer.Option(
         None, "--file", "-f", help="Legacy file option (preferred: radar ingest [path])"
     ),
 ):
-    """Ingest massive textual intelligence via stdin or file."""
-    text = ""
+    """Ingest massive textual intelligence via stdin, file, or URL."""
 
-    # 1. Check positional argument
-    if source == "-":
-        if sys.stdin.isatty():
-            console.print(
-                "[bold blue]Ready for input... (Press Ctrl-D when finished)[/bold blue]"
-            )
-        text = sys.stdin.read()
-    elif source:
-        try:
-            with open(source, "r") as f:
-                text = f.read()
-        except Exception as e:
-            console.print(f"[bold red]Error reading file {source}:[/bold red] {e}")
-            raise typer.Exit(code=1)
-
-    # 2. Check legacy --file option if positional wasn't used
-    elif file:
-        text = file.read()
-
-    # 3. Check for piped input (automatic)
-    elif not sys.stdin.isatty():
-        text = sys.stdin.read()
-
-    else:
-        console.print(
-            "[bold red]Error:[/bold red] No input provided. Use 'radar ingest -', 'radar ingest [path]', or pipe text."
-        )
-        raise typer.Exit(code=1)
-
-    if not text.strip():
-        console.print("[bold red]Error:[/bold red] Empty input.")
-        raise typer.Exit(code=1)
-
-    agent = TextIngestAgent()
-
-    # Run async ingest and save
-    async def process_signal():
+    async def process_ingestion():
         from radar.db.engine import async_session
 
-        signal = await agent.ingest(text)
+        # 1. Handle URL
+        if source and (source.startswith("http://") or source.startswith("https://")):
+            agent = WebIngestAgent()
+            signal = await agent.ingest(source)
 
-        # Persist to DB
+        else:
+            # 2. Handle Text (File or Stdin)
+            text = ""
+            if source == "-":
+                if sys.stdin.isatty():
+                    console.print(
+                        "[bold blue]Ready for input... (Press Ctrl-D when finished)[/bold blue]"
+                    )
+                text = sys.stdin.read()
+            elif source:
+                try:
+                    with open(source, "r") as f:
+                        text = f.read()
+                except Exception as e:
+                    console.print(
+                        f"[bold red]Error reading file {source}:[/bold red] {e}"
+                    )
+                    raise typer.Exit(code=1)
+            elif file:
+                text = file.read()
+            elif not sys.stdin.isatty():
+                text = sys.stdin.read()
+            else:
+                console.print(
+                    "[bold red]Error:[/bold red] No input provided. Use 'radar ingest -', 'radar ingest [path]', or pipe text."
+                )
+                raise typer.Exit(code=1)
+
+            if not text.strip():
+                console.print("[bold red]Error:[/bold red] Empty input.")
+                raise typer.Exit(code=1)
+
+            agent = TextIngestAgent()
+            signal = await agent.ingest(text)
+
+        # 3. Persist to DB
         async with async_session() as session:
             session.add(signal)
             await session.commit()
             await session.refresh(signal)
         return signal
 
-    signal = asyncio.run(process_signal())
+    signal = asyncio.run(process_ingestion())
 
     # Improved Feedback UI
     from rich.table import Table
@@ -108,6 +109,8 @@ def ingest(
     table.add_row(
         "[bold cyan]Date[/bold cyan]", signal.date.strftime("%Y-%m-%d %H:%M:%S")
     )
+    if signal.url:
+        table.add_row("[bold cyan]URL[/bold cyan]", signal.url)
     table.add_row("[bold cyan]Source[/bold cyan]", signal.source)
     table.add_row("[bold cyan]Length[/bold cyan]", f"{len(signal.content)} chars")
 
