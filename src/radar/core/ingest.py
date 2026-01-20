@@ -50,3 +50,26 @@ class WebIngestAgent:
         signal = self.parse(html, url)
         logger.info(f"Parsed signal: {signal.title}")
         return signal
+
+
+class TextIngestAgent:
+    def parse(self, text: str, title: str = "Raw Input") -> Signal:
+        # Generate a generic title if not provided or just use the first line
+        if title == "Raw Input" and text.strip():
+            first_line = text.strip().split("\n")[0][:50]
+            if first_line:
+                title = first_line
+
+        return Signal(
+            title=title,
+            content=text,
+            raw_text=text,
+            date=datetime.now(),
+            source="stdin",
+        )
+
+    async def ingest(self, text: str) -> Signal:
+        logger.info("Ingesting raw text from stdin")
+        signal = self.parse(text)
+        logger.info(f"Parsed signal: {signal.title}")
+        return signal
