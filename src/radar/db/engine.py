@@ -1,4 +1,4 @@
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from google.cloud.sql.connector import Connector
 from radar.config import settings
 
@@ -35,3 +35,7 @@ if settings.INSTANCE_CONNECTION_NAME:
 else:
     # Use standard DB_URL
     engine = create_async_engine(settings.DB_URL, echo=False)
+
+async_session = async_sessionmaker(
+    bind=engine, class_=AsyncSession, expire_on_commit=False
+)
