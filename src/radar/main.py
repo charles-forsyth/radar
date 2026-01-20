@@ -1,6 +1,7 @@
 import typer
 import sys
 import asyncio
+import httpx
 from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
@@ -49,7 +50,20 @@ def ingest(
         # 1. Handle URL
         if source and (source.startswith("http://") or source.startswith("https://")):
             agent = WebIngestAgent()
-            signal = await agent.ingest(source)
+            try:
+                signal = await agent.ingest(source)
+            except httpx.HTTPStatusError as e:
+                console.print(
+                    f"[bold red]HTTP Error {e.response.status_code}:[/bold red] {e}"
+                )
+                if e.response.status_code == 403:
+                    console.print(
+                        "[yellow]Tip: The site might be blocking bots. We're using a standard browser User-Agent now, but some strict WAFs may still block us.[/yellow]"
+                    )
+                raise typer.Exit(code=1)
+            except httpx.RequestError as e:
+                console.print(f"[bold red]Network Error:[/bold red] {e}")
+                raise typer.Exit(code=1)
 
         else:
             # 2. Handle Text (File or Stdin)

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class WebIngestAgent:
     def __init__(self):
         self.headers = {
-            "User-Agent": "Mozilla/5.0 (compatible; RadarBot/0.1; +http://github.com/charles-forsyth/radar)"
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
 
     async def fetch(self, url: str) -> str:
