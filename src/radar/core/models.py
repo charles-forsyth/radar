@@ -20,10 +20,21 @@ class ExtractedConnection(BaseModel):
     description: str = Field(description="Context describing the relationship.")
 
 
+class ExtractedTrend(BaseModel):
+    name: str = Field(description="The name of the emerging trend.")
+    description: str = Field(description="Description of the trend and its impact.")
+    velocity: str = Field(
+        description="The velocity or maturity of the trend (emerging, accelerating, stabilizing)."
+    )
+
+
 class KnowledgeGraphExtraction(BaseModel):
     entities: List[ExtractedEntity] = Field(
         description="List of entities identified in the text."
     )
     connections: List[ExtractedConnection] = Field(
         description="List of relationships identified between entities."
+    )
+    trends: List[ExtractedTrend] = Field(
+        description="List of emerging market trends identified in the text."
     )
