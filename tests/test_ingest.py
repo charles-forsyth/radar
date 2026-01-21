@@ -21,7 +21,7 @@ async def test_ingest_fetch():
         # But let's try a simple parsing test first
 
         html = "<html><title>Test Page</title><body><p>Some content</p></body></html>"
-        signal = await agent.parse(html, "http://example.com")
+        signal, kg = await agent.parse(html, "http://example.com")
 
         assert signal.title == "Test Page"
         assert "Some content" in signal.content
