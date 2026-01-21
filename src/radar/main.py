@@ -13,9 +13,54 @@ from radar.db.engine import set_global_connector
 from radar.db.init import init_db
 from radar.db.models import Entity, Connection, Signal, Trend
 from sqlalchemy import select
+from radar.ui.visualizer import generate_graph_html
 
 app = typer.Typer(name="radar", help="📡 Personal Industry Intelligence Brain")
 console = Console()
+
+
+@app.command()
+def visualize(output: str = "radar_graph.html"):
+    """Generate an interactive 3D knowledge graph visualization."""
+
+    async def do_visualize():
+        from radar.db.engine import async_session
+        from sqlalchemy import select
+
+        # Connect to DB
+        connector = None
+        if settings.INSTANCE_CONNECTION_NAME:
+            loop = asyncio.get_running_loop()
+            connector = Connector(loop=loop)
+            set_global_connector(connector)
+            await connector.__aenter__()
+
+        try:
+            async with async_session() as session:
+                console.print("[bold blue]Fetching Knowledge Graph...[/bold blue]")
+
+                result_entities = await session.execute(select(Entity))
+                entities = result_entities.scalars().all()
+
+                result_connections = await session.execute(select(Connection))
+                connections = result_connections.scalars().all()
+
+                if not entities:
+                    console.print("[yellow]No entities found to visualize.[/yellow]")
+                    return
+
+                file_path = generate_graph_html(entities, connections, output)
+                console.print(
+                    Panel(
+                        f"[bold green]Graph Generated:[/bold green] {file_path}\nOpen this file in your browser to explore the 3D Knowledge Graph."
+                    )
+                )
+
+        finally:
+            if connector:
+                await connector.__aexit__(None, None, None)
+
+    asyncio.run(do_visualize())
 
 
 @app.command()
