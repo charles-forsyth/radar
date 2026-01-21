@@ -6,8 +6,10 @@ import click
 from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
+from google.cloud.sql.connector import Connector
 from radar.core.ingest import TextIngestAgent, WebIngestAgent
 from radar.config import settings
+from radar.db.engine import set_global_connector
 
 app = typer.Typer(name="radar", help="📡 Personal Industry Intelligence Brain")
 console = Console()
@@ -46,7 +48,7 @@ def ingest(
 ):
     """Ingest massive textual intelligence via stdin, file, or URL."""
 
-    async def process_ingestion():
+    async def _run_ingest_logic():
         from radar.db.engine import async_session
 
         # 1. Handle URL
@@ -119,6 +121,19 @@ def ingest(
             raise typer.Exit(code=1)
 
         return signal
+
+    async def process_ingestion():
+        # Initialize Cloud SQL Connector if needed
+        if settings.INSTANCE_CONNECTION_NAME:
+            # Use Connector as a context manager if possible, or manually managing scope
+            # Here we initialize it inside the async loop
+            connector = Connector()
+            set_global_connector(connector)
+            # Use it as an async context manager to ensure clean up
+            async with connector:
+                return await _run_ingest_logic()
+        else:
+            return await _run_ingest_logic()
 
     signal = asyncio.run(process_ingestion())
 
