@@ -1,3 +1,0 @@
-Testing IAM Authentication with forsythc@ucr.edu.
-If this works, the signal will be ingested into the database.
-End.

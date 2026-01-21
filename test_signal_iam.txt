@@ -1,3 +1,0 @@
-Testing IAM Authentication again after enabling cloudsql.iam_authentication=on.
-The user and permissions are already set up.
-End.

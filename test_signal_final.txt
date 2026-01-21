@@ -1,3 +1,0 @@
-Testing IAM Authentication with forsythc@ucr.edu after adding permissions.
-This signal should now be successfully ingested.
-End.
