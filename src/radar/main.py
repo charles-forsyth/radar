@@ -7,6 +7,7 @@ from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
 from radar.core.ingest import TextIngestAgent, WebIngestAgent
+from radar.config import settings
 
 app = typer.Typer(name="radar", help="📡 Personal Industry Intelligence Brain")
 console = Console()
@@ -102,10 +103,21 @@ def ingest(
             signal = await agent.ingest(text)
 
         # 3. Persist to DB
-        async with async_session() as session:
-            session.add(signal)
-            await session.commit()
-            await session.refresh(signal)
+        try:
+            async with async_session() as session:
+                session.add(signal)
+                await session.commit()
+                await session.refresh(signal)
+        except (OSError, asyncio.TimeoutError) as e:
+            console.print(
+                f"[bold red]Database Connection Error:[/bold red] Could not connect to the database at {settings.DB_URL if not settings.INSTANCE_CONNECTION_NAME else settings.INSTANCE_CONNECTION_NAME}"
+            )
+            console.print(f"[dim]Error details: {e}[/dim]")
+            raise typer.Exit(code=1)
+        except Exception as e:
+            console.print(f"[bold red]Database Error:[/bold red] {e}")
+            raise typer.Exit(code=1)
+
         return signal
 
     signal = asyncio.run(process_ingestion())
