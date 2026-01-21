@@ -2,7 +2,7 @@ from radar.core.ingest import TextIngestAgent
 from radar.main import app
 from typer.testing import CliRunner
 import pytest
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
 
 runner = CliRunner()
 
@@ -15,6 +15,13 @@ def mock_db_session():
         # Mock context manager
         mock_session.__aenter__.return_value = mock_session
         mock_session.__aexit__.return_value = None
+        
+        # Mock execute result
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None # Assume no existing entities
+        mock_result.scalars.return_value.all.return_value = []
+        mock_session.execute.return_value = mock_result
+        
         yield mock_session
 
 
