@@ -5,7 +5,8 @@ from datetime import datetime
 import logging
 from google import genai
 from radar.config import settings
-from typing import List
+from typing import List, Tuple
+from radar.core.models import KnowledgeGraphExtraction
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,32 @@ class IntelligenceAgent:
             contents=text,
         )
         return result.embeddings[0].values
+
+    async def extract_knowledge(self, text: str) -> KnowledgeGraphExtraction:
+        """Extract entities and relationships from text using structured generation."""
+        prompt = """
+        Analyze the following text and extract a Knowledge Graph consisting of Entities and Connections.
+        Focus on key players, technologies, and their relationships.
+        
+        Text:
+        {text}
+        """
+
+        response = self.client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt.format(text=text),
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": KnowledgeGraphExtraction,
+            },
+        )
+
+        try:
+            # The response.text should be JSON conforming to the schema
+            return KnowledgeGraphExtraction.model_validate_json(response.text)
+        except Exception as e:
+            logger.error(f"Failed to parse knowledge extraction: {e}")
+            return KnowledgeGraphExtraction(entities=[], connections=[])
 
     async def answer_question(
         self, question: str, context_signals: List[Signal]
@@ -65,7 +92,9 @@ class WebIngestAgent:
                 logger.error(f"HTTP Error fetching {url}: {e}")
                 raise
 
-    async def parse(self, html: str, url: str) -> Signal:
+    async def parse(
+        self, html: str, url: str
+    ) -> Tuple[Signal, KnowledgeGraphExtraction]:
         soup = BeautifulSoup(html, "lxml")
         title = soup.title.string if soup.title else "No Title"
 
@@ -79,7 +108,10 @@ class WebIngestAgent:
         # Generate vector embedding
         vector = await self.intel.get_embedding(content)
 
-        return Signal(
+        # Extract Knowledge Graph
+        kg = await self.intel.extract_knowledge(content)
+
+        signal = Signal(
             title=title,
             url=url,
             content=content,
@@ -88,20 +120,23 @@ class WebIngestAgent:
             source="web",
             vector=vector,
         )
+        return signal, kg
 
-    async def ingest(self, url: str) -> Signal:
+    async def ingest(self, url: str) -> Tuple[Signal, KnowledgeGraphExtraction]:
         logger.info(f"Ingesting {url}")
         html = await self.fetch(url)
-        signal = await self.parse(html, url)
+        signal, kg = await self.parse(html, url)
         logger.info(f"Parsed signal: {signal.title}")
-        return signal
+        return signal, kg
 
 
 class TextIngestAgent:
     def __init__(self):
         self.intel = IntelligenceAgent()
 
-    async def parse(self, text: str, title: str = "Raw Input") -> Signal:
+    async def parse(
+        self, text: str, title: str = "Raw Input"
+    ) -> Tuple[Signal, KnowledgeGraphExtraction]:
         # Generate a generic title if not provided or just use the first line
         if title == "Raw Input" and text.strip():
             first_line = text.strip().split("\n")[0][:50]
@@ -112,7 +147,10 @@ class TextIngestAgent:
         # Generate vector embedding
         vector = await self.intel.get_embedding(content[:5000])
 
-        return Signal(
+        # Extract Knowledge Graph
+        kg = await self.intel.extract_knowledge(content[:5000])
+
+        signal = Signal(
             title=title,
             content=content,
             raw_text=text,
@@ -120,9 +158,10 @@ class TextIngestAgent:
             source="stdin",
             vector=vector,
         )
+        return signal, kg
 
-    async def ingest(self, text: str) -> Signal:
+    async def ingest(self, text: str) -> Tuple[Signal, KnowledgeGraphExtraction]:
         logger.info("Ingesting raw text from stdin")
-        signal = await self.parse(text)
+        signal, kg = await self.parse(text)
         logger.info(f"Parsed signal: {signal.title}")
-        return signal
+        return signal, kg

@@ -22,7 +22,7 @@ def mock_db_session():
 async def test_text_ingest_agent():
     agent = TextIngestAgent()
     text = "This is a test signal.\nIt has multiple lines."
-    signal = await agent.ingest(text)
+    signal, kg = await agent.ingest(text)
 
     assert signal.title == "This is a test signal."
     assert signal.content == text
