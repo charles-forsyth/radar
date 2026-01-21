@@ -11,9 +11,71 @@ from radar.core.ingest import TextIngestAgent, WebIngestAgent
 from radar.config import settings
 from radar.db.engine import set_global_connector
 from radar.db.init import init_db
+from radar.core.ingest import IntelligenceAgent
 
 app = typer.Typer(name="radar", help="📡 Personal Industry Intelligence Brain")
 console = Console()
+
+
+@app.command()
+def ask(question: str):
+    """Ask a question based on ingested intelligence."""
+
+    async def do_ask():
+        from radar.db.engine import async_session
+        from sqlalchemy import select
+        from radar.db.models import Signal
+
+        intel = IntelligenceAgent()
+
+        # Connect to DB
+        connector = None
+        if settings.INSTANCE_CONNECTION_NAME:
+            loop = asyncio.get_running_loop()
+            connector = Connector(loop=loop)
+            set_global_connector(connector)
+            await connector.__aenter__()
+
+        try:
+            # 1. Generate embedding for the question
+            question_vector = await intel.get_embedding(question)
+
+            # 2. Retrieve top-k relevant signals using vector similarity
+            async with async_session() as session:
+                # Calculate distance and order by it
+                # <-> operator is L2 distance in pgvector
+                stmt = (
+                    select(Signal)
+                    .order_by(Signal.vector.l2_distance(question_vector))
+                    .limit(5)
+                )
+                result = await session.execute(stmt)
+                relevant_signals = result.scalars().all()
+
+            if not relevant_signals:
+                console.print(
+                    "[yellow]No intelligence signals found in database.[/yellow]"
+                )
+                return
+
+            # 3. Use Gemini to answer based on these signals
+            with console.status("[bold blue]Thinking...[/bold blue]"):
+                answer = await intel.answer_question(question, relevant_signals)
+
+            # 4. Display the answer
+            console.print(
+                Panel(answer, title=f"[bold cyan]Question: {question}[/bold cyan]")
+            )
+
+            # Show sources
+            sources = ", ".join(set([s.title for s in relevant_signals]))
+            console.print(f"[dim]Sources: {sources}[/dim]")
+
+        finally:
+            if connector:
+                await connector.__aexit__(None, None, None)
+
+    asyncio.run(do_ask())
 
 
 @app.command()
