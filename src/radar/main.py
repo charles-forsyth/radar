@@ -125,9 +125,12 @@ def ingest(
     async def process_ingestion():
         # Initialize Cloud SQL Connector if needed
         if settings.INSTANCE_CONNECTION_NAME:
+            # Explicitly capture the running loop to prevent mismatch errors
+            loop = asyncio.get_running_loop()
+
             # Use Connector as a context manager if possible, or manually managing scope
-            # Here we initialize it inside the async loop
-            connector = Connector()
+            # Here we initialize it inside the async loop with explicit loop argument
+            connector = Connector(loop=loop)
             set_global_connector(connector)
             # Use it as an async context manager to ensure clean up
             async with connector:
