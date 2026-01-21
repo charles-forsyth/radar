@@ -15,9 +15,16 @@ def set_global_connector(connector: Connector):
 
 async def get_db_connection():
     """
+
+
     Async creator function for SQLAlchemy.
+
+
     Uses the globally injected connector to establish a connection.
+
+
     """
+
     if not _global_connector:
         raise RuntimeError(
             "Cloud SQL Connector not initialized. Call set_global_connector() first."
@@ -27,8 +34,9 @@ async def get_db_connection():
         settings.INSTANCE_CONNECTION_NAME,
         "asyncpg",
         user=settings.DB_USER,
+        password=settings.DB_PASSWORD if not settings.ENABLE_IAM_AUTH else None,
         db=settings.DB_NAME,
-        enable_iam_auth=True,
+        enable_iam_auth=settings.ENABLE_IAM_AUTH,
     )
 
 
