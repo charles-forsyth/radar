@@ -2,21 +2,16 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from google.cloud.sql.connector import Connector
 from radar.config import settings
 
-# Global connector instance to be managed
-_connector: Connector | None = None
-
 
 async def get_db_connection():
     """
     Async creator function for SQLAlchemy.
     Initializes the connector if needed and returns a connection.
     """
-    global _connector
-    if not _connector:
-        # Get the current loop or let Connector find it
-        _connector = Connector()
+    # Instantiate Connector locally to ensure it uses the current event loop
+    connector = Connector()
 
-    return await _connector.connect_async(
+    return await connector.connect_async(
         settings.INSTANCE_CONNECTION_NAME,
         "asyncpg",
         user=settings.DB_USER,
