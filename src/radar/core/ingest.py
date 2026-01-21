@@ -3,8 +3,47 @@ from bs4 import BeautifulSoup
 from radar.db.models import Signal
 from datetime import datetime
 import logging
+from google import genai
+from radar.config import settings
+from typing import List
 
 logger = logging.getLogger(__name__)
+
+
+class IntelligenceAgent:
+    def __init__(self):
+        self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
+
+    async def get_embedding(self, text: str) -> List[float]:
+        """Generate a vector embedding for the given text."""
+        result = self.client.models.embed_content(
+            model=settings.EMBEDDING_MODEL,
+            contents=text,
+        )
+        return result.embeddings[0].values
+
+    async def answer_question(
+        self, question: str, context_signals: List[Signal]
+    ) -> str:
+        """Synthesize an answer using RAG."""
+        context_text = "\n\n".join(
+            [f"--- Signal: {s.title} ---\n{s.content}" for s in context_signals]
+        )
+
+        prompt = f"""
+You are RADAR, an Industry Intelligence Brain. Use the following ingested signals to answer the user's question.
+If the answer is not in the context, say you don't know based on current signals.
+
+CONTEXT:
+{context_text}
+
+QUESTION: {question}
+"""
+        response = self.client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+        )
+        return response.text
 
 
 class WebIngestAgent:
@@ -12,6 +51,7 @@ class WebIngestAgent:
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
+        self.intel = IntelligenceAgent()
 
     async def fetch(self, url: str) -> str:
         async with httpx.AsyncClient() as client:
@@ -25,7 +65,7 @@ class WebIngestAgent:
                 logger.error(f"HTTP Error fetching {url}: {e}")
                 raise
 
-    def parse(self, html: str, url: str) -> Signal:
+    async def parse(self, html: str, url: str) -> Signal:
         soup = BeautifulSoup(html, "lxml")
         title = soup.title.string if soup.title else "No Title"
 
@@ -34,42 +74,55 @@ class WebIngestAgent:
             script.decompose()
 
         text = soup.get_text(separator="\n", strip=True)
+        content = text[:5000]
+
+        # Generate vector embedding
+        vector = await self.intel.get_embedding(content)
 
         return Signal(
             title=title,
             url=url,
-            content=text[:5000],  # Basic truncation
+            content=content,
             raw_text=text,
             date=datetime.now(),
             source="web",
+            vector=vector,
         )
 
     async def ingest(self, url: str) -> Signal:
         logger.info(f"Ingesting {url}")
         html = await self.fetch(url)
-        signal = self.parse(html, url)
+        signal = await self.parse(html, url)
         logger.info(f"Parsed signal: {signal.title}")
         return signal
 
 
 class TextIngestAgent:
-    def parse(self, text: str, title: str = "Raw Input") -> Signal:
+    def __init__(self):
+        self.intel = IntelligenceAgent()
+
+    async def parse(self, text: str, title: str = "Raw Input") -> Signal:
         # Generate a generic title if not provided or just use the first line
         if title == "Raw Input" and text.strip():
             first_line = text.strip().split("\n")[0][:50]
             if first_line:
                 title = first_line
 
+        content = text
+        # Generate vector embedding
+        vector = await self.intel.get_embedding(content[:5000])
+
         return Signal(
             title=title,
-            content=text,
+            content=content,
             raw_text=text,
             date=datetime.now(),
             source="stdin",
+            vector=vector,
         )
 
     async def ingest(self, text: str) -> Signal:
         logger.info("Ingesting raw text from stdin")
-        signal = self.parse(text)
+        signal = await self.parse(text)
         logger.info(f"Parsed signal: {signal.title}")
         return signal
