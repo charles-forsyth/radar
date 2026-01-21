@@ -23,11 +23,31 @@ class IntelligenceAgent:
         )
         return result.embeddings[0].values
 
+    async def get_batch_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """Generate vector embeddings for a batch of texts."""
+        if not texts:
+            return []
+
+        # We process embeddings sequentially or concurrently here
+        # Optimizing with `batch_embed_contents` is better but we use a loop for type safety for now
+
+        embeddings = []
+        for t in texts:
+            result = self.client.models.embed_content(
+                model=settings.EMBEDDING_MODEL,
+                contents=t,
+            )
+            embeddings.append(result.embeddings[0].values)
+        return embeddings
+
     async def extract_knowledge(self, text: str) -> KnowledgeGraphExtraction:
-        """Extract entities and relationships from text using structured generation."""
+        """Extract entities, relationships, and trends from text using structured generation."""
         prompt = """
-        Analyze the following text and extract a Knowledge Graph consisting of Entities and Connections.
-        Focus on key players, technologies, and their relationships.
+        Analyze the following text and extract a Knowledge Graph.
+        
+        1. **Entities:** Identify key players (Companies, People) and Technologies.
+        2. **Connections:** Map the relationships between them (who is competing with whom, who supports what).
+        3. **Trends:** Identify broader market trends or patterns (e.g., "AI Consolidation", "Green Tech Surge"). Estimate their velocity.
         
         Text:
         {text}
@@ -47,7 +67,7 @@ class IntelligenceAgent:
             return KnowledgeGraphExtraction.model_validate_json(response.text)
         except Exception as e:
             logger.error(f"Failed to parse knowledge extraction: {e}")
-            return KnowledgeGraphExtraction(entities=[], connections=[])
+            return KnowledgeGraphExtraction(entities=[], connections=[], trends=[])
 
     async def answer_question(
         self, question: str, context_signals: List[Signal]

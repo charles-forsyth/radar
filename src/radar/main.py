@@ -11,7 +11,7 @@ from radar.core.ingest import TextIngestAgent, WebIngestAgent, IntelligenceAgent
 from radar.config import settings
 from radar.db.engine import set_global_connector
 from radar.db.init import init_db
-from radar.db.models import Entity, Connection, Signal
+from radar.db.models import Entity, Connection, Signal, Trend
 from sqlalchemy import select
 
 app = typer.Typer(name="radar", help="📡 Personal Industry Intelligence Brain")
@@ -135,17 +135,17 @@ def ingest(
             agent = WebIngestAgent()
             try:
                 signal, kg = await agent.ingest(source)
-            except httpx.HTTPStatusError as e:
+            except httpx.HTTPStatusError as e_http:
                 console.print(
-                    f"[bold red]HTTP Error {e.response.status_code}:[/bold red] {e}"
+                    f"[bold red]HTTP Error {e_http.response.status_code}:[/bold red] {e_http}"
                 )
-                if e.response.status_code == 403:
+                if e_http.response.status_code == 403:
                     console.print(
                         "[yellow]Tip: The site might be blocking bots. We're using a standard browser User-Agent now, but some strict WAFs may still block us.[/yellow]"
                     )
                 raise typer.Exit(code=1)
-            except httpx.RequestError as e:
-                console.print(f"[bold red]Network Error:[/bold red] {e}")
+            except httpx.RequestError as e_req:
+                console.print(f"[bold red]Network Error:[/bold red] {e_req}")
                 raise typer.Exit(code=1)
 
         else:
@@ -161,9 +161,9 @@ def ingest(
                 try:
                     with open(source, "r") as f:
                         text = f.read()
-                except Exception as e:
+                except Exception as e_file:
                     console.print(
-                        f"[bold red]Error reading file {source}:[/bold red] {e}"
+                        f"[bold red]Error reading file {source}:[/bold red] {e_file}"
                     )
                     raise typer.Exit(code=1)
             elif file:
@@ -185,6 +185,23 @@ def ingest(
 
         # 3. Persist to DB
         try:
+            # 3a. Generate embeddings for extracted items
+            items_to_embed = []
+            for e in kg.entities:
+                items_to_embed.append(f"{e.name}: {e.description}")
+            for t in kg.trends:
+                items_to_embed.append(f"{t.name}: {t.description}")
+
+            # Batch call to Gemini
+            if items_to_embed:
+                vectors = await agent.intel.get_batch_embeddings(items_to_embed)
+            else:
+                vectors = []
+
+            # Map back to objects
+            entity_vectors = vectors[: len(kg.entities)]
+            trend_vectors = vectors[len(kg.entities) :]
+
             async with async_session() as session:
                 session.add(signal)
                 await session.flush()  # Get ID for signal
@@ -192,7 +209,7 @@ def ingest(
                 # Process Entities
                 entity_map = {}  # Name -> UUID
 
-                for extracted_entity in kg.entities:
+                for idx, extracted_entity in enumerate(kg.entities):
                     # Check if entity exists
                     stmt = select(Entity).where(Entity.name == extracted_entity.name)
                     result = await session.execute(stmt)
@@ -200,15 +217,39 @@ def ingest(
 
                     if existing_entity:
                         entity_map[extracted_entity.name] = existing_entity.id
+                        # Optional: Update vector/description if needed?
+                        # For now, let's keep the first one or assume stability.
                     else:
                         new_entity = Entity(
                             name=extracted_entity.name,
                             type=extracted_entity.type,
                             details={"description": extracted_entity.description},
+                            vector=(
+                                entity_vectors[idx]
+                                if idx < len(entity_vectors)
+                                else None
+                            ),
                         )
                         session.add(new_entity)
                         await session.flush()
                         entity_map[extracted_entity.name] = new_entity.id
+
+                # Process Trends
+                for idx, extracted_trend in enumerate(kg.trends):
+                    stmt = select(Trend).where(Trend.name == extracted_trend.name)
+                    result = await session.execute(stmt)
+                    existing_trend = result.scalar_one_or_none()
+
+                    if not existing_trend:
+                        new_trend = Trend(
+                            name=extracted_trend.name,
+                            description=extracted_trend.description,
+                            velocity=extracted_trend.velocity,
+                            vector=(
+                                trend_vectors[idx] if idx < len(trend_vectors) else None
+                            ),
+                        )
+                        session.add(new_trend)
 
                 # Process Connections
                 for extracted_conn in kg.connections:
@@ -229,14 +270,14 @@ def ingest(
 
                 await session.commit()
                 await session.refresh(signal)
-        except (OSError, asyncio.TimeoutError) as e:
+        except (OSError, asyncio.TimeoutError) as e_conn:
             console.print(
                 f"[bold red]Database Connection Error:[/bold red] Could not connect to the database at {settings.DB_URL if not settings.INSTANCE_CONNECTION_NAME else settings.INSTANCE_CONNECTION_NAME}"
             )
-            console.print(f"[dim]Error details: {e}[/dim]")
+            console.print(f"[dim]Error details: {e_conn}[/dim]")
             raise typer.Exit(code=1)
-        except Exception as e:
-            console.print(f"[bold red]Database Error:[/bold red] {e}")
+        except Exception as e_db:
+            console.print(f"[bold red]Database Error:[/bold red] {e_db}")
             raise typer.Exit(code=1)
 
         return signal, kg
@@ -281,6 +322,7 @@ def ingest(
     # KG Stats
     table.add_row("[bold magenta]Entities[/bold magenta]", str(len(kg.entities)))
     table.add_row("[bold magenta]Connections[/bold magenta]", str(len(kg.connections)))
+    table.add_row("[bold magenta]Trends[/bold magenta]", str(len(kg.trends)))
 
     # Add a preview snippet
     snippet = (
