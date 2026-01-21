@@ -10,6 +10,7 @@ from google.cloud.sql.connector import Connector
 from radar.core.ingest import TextIngestAgent, WebIngestAgent
 from radar.config import settings
 from radar.db.engine import set_global_connector
+from radar.db.init import init_db
 
 app = typer.Typer(name="radar", help="📡 Personal Industry Intelligence Brain")
 console = Console()
@@ -18,11 +19,27 @@ console = Console()
 @app.command()
 def init():
     """Initialize the knowledge graph database."""
-    console.print(
-        Panel(
-            "[bold green]📡 RADAR SYSTEMS INITIALIZED[/bold green]\nKnowledge Graph ready for signals."
+
+    async def do_init():
+        if settings.INSTANCE_CONNECTION_NAME:
+            loop = asyncio.get_running_loop()
+            connector = Connector(loop=loop)
+            set_global_connector(connector)
+            async with connector:
+                await init_db()
+        else:
+            await init_db()
+
+    try:
+        asyncio.run(do_init())
+        console.print(
+            Panel(
+                "[bold green]📡 RADAR SYSTEMS INITIALIZED[/bold green]\nKnowledge Graph ready for signals."
+            )
         )
-    )
+    except Exception as e:
+        console.print(f"[bold red]Initialization Failed:[/bold red] {e}")
+        raise typer.Exit(code=1)
 
 
 @app.command()
