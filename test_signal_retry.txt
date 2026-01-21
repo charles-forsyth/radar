@@ -1,0 +1,3 @@
+Testing IAM Authentication again after gcloud auth login.
+Hopefully the credentials are now correctly picked up.
+End.
