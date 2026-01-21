@@ -14,9 +14,89 @@ from radar.db.init import init_db
 from radar.db.models import Entity, Connection, Signal, Trend
 from sqlalchemy import select
 from radar.ui.visualizer import generate_graph_html
+from radar.ui.dashboard import render_dashboard
+from sqlalchemy import func, desc
 
 app = typer.Typer(name="radar", help="📡 Personal Industry Intelligence Brain")
 console = Console()
+
+
+@app.command()
+def dashboard():
+    """Display a live intelligence dashboard in the terminal."""
+
+    async def do_dashboard():
+        from radar.db.engine import async_session
+
+        # Connect to DB
+        connector = None
+        if settings.INSTANCE_CONNECTION_NAME:
+            loop = asyncio.get_running_loop()
+            connector = Connector(loop=loop)
+            set_global_connector(connector)
+            await connector.__aenter__()
+
+        try:
+            async with async_session() as session:
+                # Fetch Stats
+                s_count = (
+                    await session.execute(select(func.count(Signal.id)))
+                ).scalar()
+                e_count = (
+                    await session.execute(select(func.count(Entity.id)))
+                ).scalar()
+                c_count = (
+                    await session.execute(select(func.count(Connection.id)))
+                ).scalar()
+                t_count = (await session.execute(select(func.count(Trend.id)))).scalar()
+
+                # Fetch Data
+                signals = (
+                    (
+                        await session.execute(
+                            select(Signal).order_by(desc(Signal.date)).limit(10)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+
+                trends = (
+                    (
+                        await session.execute(
+                            select(Trend).order_by(desc(Trend.id)).limit(5)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+
+                entities = (
+                    (
+                        await session.execute(
+                            select(Entity)
+                            .order_by(func.random())
+                            .limit(15)  # Random sample for now
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+
+                stats = {
+                    "signals": s_count,
+                    "entities": e_count,
+                    "connections": c_count,
+                    "trends": t_count,
+                }
+
+                render_dashboard(console, signals, entities, trends, stats)
+
+        finally:
+            if connector:
+                await connector.__aexit__(None, None, None)
+
+    asyncio.run(do_dashboard())
 
 
 @app.command()
