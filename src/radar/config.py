@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
 
 
 class Settings(BaseSettings):
@@ -14,7 +15,9 @@ class Settings(BaseSettings):
     DB_PASSWORD: str | None = None
     DB_NAME: str = "radar"
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(".env", Path.home() / "config" / "radar" / ".env"), extra="ignore"
+    )
 
 
 settings = Settings()
