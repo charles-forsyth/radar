@@ -5,6 +5,7 @@ from datetime import datetime
 import logging
 from google import genai
 from radar.config import settings
+from pydantic import BaseModel
 from typing import List, Tuple
 from radar.core.models import KnowledgeGraphExtraction
 
@@ -91,6 +92,125 @@ QUESTION: {question}
             contents=prompt,
         )
         return response.text
+
+    async def optimize_knowledge(self, items: List[dict]) -> dict:
+        """Use Gemini to decide how to merge multiple similar entities/trends."""
+        prompt = f"""
+You are a Knowledge Graph Optimizer. Below is a list of potentially duplicate items (Entities or Trends) extracted from different sources.
+Identify which items refer to the same thing and provide a single, unified record for them.
+
+ITEMS:
+{items}
+
+OUTPUT:
+Return a JSON object with:
+1. "unified_name": The most authoritative/standard name.
+2. "unified_description": A synthesized description combining all unique facts.
+3. "merged_ids": A list of the original IDs that are being merged into this unified record.
+"""
+
+        class MergedItem(BaseModel):
+            unified_name: str
+            unified_description: str
+            merged_ids: List[str]
+
+        response = self.client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": MergedItem,
+            },
+        )
+        import json
+
+        return json.loads(response.text)
+
+    async def generate_report(self, topic: str, context: dict) -> str:
+        """Synthesize a long-form strategic report based on extracted intelligence."""
+        prompt = f"""
+You are RADAR, a Strategic Intelligence Architect. Use the provided Knowledge Graph context to write a comprehensive, publication-ready intelligence briefing.
+
+TOPIC: {topic}
+
+KNOWLEDGE CONTEXT:
+- Signals: {context.get("signals", [])}
+- Entities: {context.get("entities", [])}
+- Trends: {context.get("trends", [])}
+
+REPORT STRUCTURE:
+1. EXECUTIVE SUMMARY: High-level strategic overview.
+2. TECHNICAL LANDSCAPE: Detailed breakdown of technologies and architectures.
+3. COMPETITIVE ANALYSIS: Key players (companies/people) and their relative positions.
+4. EMERGING TRENDS: Velocity and impact of identified trends.
+5. STRATEGIC RECOMMENDATIONS: Actionable advice based on the intelligence.
+
+Maintain a professional, sharp, and insightful tone. Use Markdown formatting.
+"""
+        response = self.client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+        )
+        return response.text
+
+    async def generate_briefing(self, context: dict) -> str:
+        """Synthesize a concise verbal briefing of recent intelligence."""
+        prompt = f"""
+You are IVXXa, the Captain's second in command. Provide a punchy, 60-second verbal intelligence briefing based on the activity from the last 24 hours.
+
+RECENT ACTIVITY:
+- New Signals: {context.get("signals", [])}
+- New Entities: {context.get("entities", [])}
+- New Trends: {context.get("trends", [])}
+
+INSTRUCTIONS:
+1. Start with "Good morning, Captain. Here is your strategic intelligence update." (or appropriate time of day).
+2. Highlight the 3 most significant developments.
+3. Keep the tone professional, loyal, and strategically sharp.
+4. Total length should be around 150-200 words.
+"""
+        response = self.client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+        )
+        return response.text
+
+    async def check_watchpoints(
+        self, signal_content: str, watchpoints: List[dict]
+    ) -> List[dict]:
+        """Check if a new signal triggers any active watchpoints."""
+        prompt = f"""
+You are a Strategic Sentinel. Evaluate the following incoming intelligence signal against a list of active watchpoints.
+If the signal contains information that matches a watchpoint topic, identify it and explain why.
+
+SIGNAL CONTENT:
+{signal_content}
+
+WATCHPOINTS:
+{watchpoints}
+
+OUTPUT:
+Return a JSON list of matches. Each match should have:
+1. "watchpoint_id": The ID of the matched watchpoint.
+2. "reason": A brief, one-sentence explanation of the match.
+If no matches, return an empty list [].
+"""
+
+        class WatchMatch(BaseModel):
+            watchpoint_id: str
+            reason: str
+
+        response = self.client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": List[WatchMatch],
+            },
+        )
+        import json
+
+        return json.loads(response.text)
 
     async def chat(
         self, question: str, context_signals: List[Signal], history: List[dict] = []
@@ -180,6 +300,26 @@ class ADSBScanner:
         except Exception as e:
             return {"error": str(e)}
 
+    async def get_snapshot_text(self) -> str:
+        data = await self.get_live_data()
+        if "error" in data:
+            return f"ADS-B Sensor Error: {data['error']}"
+
+        aircraft = data.get("aircraft", [])
+        if not aircraft:
+            return "No aircraft currently detected overhead."
+
+        lines = ["### ADS-B SITREP - Aircraft Overhead"]
+        for ac in aircraft:
+            flight = ac.get("flight", "Unknown").strip()
+            icao = ac.get("hex", "N/A")
+            alt = ac.get("alt_baro", 0)
+            gs = ac.get("gs", 0)
+            lines.append(
+                f"- Flight {flight} (ICAO: {icao}) at {alt:,} ft, Ground Speed: {gs:.0f} kt"
+            )
+        return "\n".join(lines)
+
 
 class APRSStreamer:
     def __init__(
@@ -195,6 +335,16 @@ class APRSStreamer:
         self.filter_str = filter_str
         self.packets: List[str] = []
         self.max_packets = 50
+
+    async def get_snapshot_text(self) -> str:
+        if not self.packets:
+            return "No recent local APRS traffic captured."
+
+        lines = ["### APRS SITREP - Local Radio Traffic"]
+        # Include last 15 packets
+        for p in self.packets[-15:]:
+            lines.append(f"- {p}")
+        return "\n".join(lines)
 
     async def start_stream(self):
         import asyncio
@@ -223,6 +373,83 @@ class APRSStreamer:
         finally:
             writer.close()
             await writer.wait_closed()
+
+
+class SectorScanner:
+    def __init__(self, location: str = "Tioga County, PA"):
+        self.location = location
+
+    async def get_metar(self) -> str:
+        """Fetch real-time METAR data (legacy station-based)."""
+        import httpx
+
+        # Keeping KELM as a secondary source
+        url = "https://aviationweather.gov/api/data/metar?ids=KELM"
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url)
+                if response.status_code == 200:
+                    return response.text.strip()
+                return f"Weather Error: {response.status_code}"
+        except Exception as e:
+            return f"Weather Error: {str(e)}"
+
+    async def get_atmos_weather(self) -> str:
+        """Fetch professional weather data using the 'atmos' tool."""
+        import subprocess
+
+        try:
+            result = subprocess.run(
+                ["atmos", self.location], capture_output=True, text=True
+            )
+            # Remove ANSI color codes for cleaner ingestion
+            import re
+
+            clean_text = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+            return clean_text.strip()
+        except Exception as e:
+            return f"Atmos Error: {str(e)}"
+
+    async def get_snapshot_text(self) -> str:
+        metar = await self.get_metar()
+        atmos = await self.get_atmos_weather()
+        return f"### SECTOR OPS SITREP\n\n#### Professional Weather (Atmos)\n{atmos}\n\n#### Aviation Weather (KELM)\n{metar}\n\n- **Satellite Status:** Tracking operational (Predictor implementation pending)"
+
+
+class TacticalAgent:
+    def __init__(self):
+        self.adsb = ADSBScanner()
+        self.aprs = APRSStreamer()
+        self.sector = SectorScanner()
+
+    async def generate_full_sitrep(self) -> str:
+        """Fetch data from all sensors and synthesize a master SITREP."""
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        adsb_data = await self.adsb.get_snapshot_text()
+        weather_data = await self.sector.get_metar()
+
+        # APRS needs a listener to have data, so we'll report status if empty
+        aprs_data = await self.aprs.get_snapshot_text()
+
+        sitrep = f"""Title: Master Tactical SITREP - {timestamp}
+Source: Integrated Sensor Array
+Location: Tioga County Sector (41.8N, 77.1W)
+
+## ENVIRONMENTAL DATA
+- **Aviation Weather (KELM):** {weather_data}
+
+## SIGNAL INTELLIGENCE (SIGINT)
+{adsb_data}
+
+{aprs_data}
+
+## STRATEGIC CONTEXT
+This report represents a comprehensive snapshot of the local tactical environment, including aircraft telemetry and radio frequency activity.
+"""
+        return sitrep
 
 
 class WebIngestAgent:
