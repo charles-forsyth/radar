@@ -69,3 +69,19 @@ class ChatMessage(SQLModel, table=True):
     role: str  # "user" or "assistant"
     content: str
     created_at: datetime = Field(default_factory=datetime.now)
+
+
+class Watchpoint(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    topic: str = Field(unique=True, index=True)
+    description: str
+    created_at: datetime = Field(default_factory=datetime.now)
+    is_active: bool = Field(default=True)
+
+
+class Alert(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    watchpoint_id: uuid.UUID = Field(index=True)
+    signal_id: uuid.UUID = Field(index=True)
+    reason: str
+    created_at: datetime = Field(default_factory=datetime.now)

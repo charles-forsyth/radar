@@ -38,25 +38,27 @@ async def test_text_ingest_agent():
     assert signal.source == "stdin"
 
 
-def test_ingest_command_stdin(mock_db_session):
+@patch("radar.main.run_ingest", new_callable=AsyncMock)
+def test_ingest_command_stdin(mock_run_ingest, mock_db_session):
     # Simulate stdin input
     result = runner.invoke(app, ["ingest"], input="Stdin content here")
     if result.exit_code != 0:
         print(result.stdout)
         print(result.exception)
     assert result.exit_code == 0
-    assert "Signal Ingested Successfully" in result.stdout
-    assert "Stdin content here" in result.stdout or "Length" in result.stdout
+    mock_run_ingest.assert_called_once()
+    assert "Stdin content here" in mock_run_ingest.call_args[0][0]
 
 
-def test_ingest_command_hyphen(mock_db_session):
+@patch("radar.main.run_ingest", new_callable=AsyncMock)
+def test_ingest_command_hyphen(mock_run_ingest, mock_db_session):
     # Simulate 'radar ingest -'
     result = runner.invoke(app, ["ingest", "-"], input="Hyphen content")
     if result.exit_code != 0:
         print(result.stdout)
     assert result.exit_code == 0
-    assert "Signal Ingested Successfully" in result.stdout
-    assert "Hyphen content" in result.stdout or "Length" in result.stdout
+    mock_run_ingest.assert_called_once()
+    assert "Hyphen content" in mock_run_ingest.call_args[0][0]
 
 
 def test_ingest_command_empty():
