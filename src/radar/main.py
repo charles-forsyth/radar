@@ -27,7 +27,7 @@ from radar.db.models import (
     ChatSession,
     ChatMessage,
 )
-from sqlalchemy import select
+from sqlalchemy import select, desc
 
 app = typer.Typer(name="radar", help="📡 Personal Industry Intelligence Brain")
 console = Console()
@@ -250,8 +250,27 @@ def sync(
                                 )
 
         if tactical:
-            console.print("[blue]Ingesting SITREP...[/blue]")
-            sitrep_text = await TacticalAgent().generate_full_sitrep()
+            from sqlalchemy import select, desc
+
+            console.print("[bold blue]Executing Tactical SITREP Ingest...[/bold blue]")
+
+            # Fetch previous SITREP for delta analysis
+            prev_sitrep = None
+            async with async_session() as session:
+                stmt = (
+                    select(Signal)
+                    .where(Signal.title.contains("SITREP"))
+                    .order_by(desc(Signal.date))
+                    .limit(1)
+                )
+                result = await session.execute(stmt)
+                last_sig = result.scalar_one_or_none()
+                if last_sig:
+                    prev_sitrep = last_sig.content
+
+            sitrep_text = await TacticalAgent().generate_full_sitrep(
+                previous_sitrep=prev_sitrep
+            )
             await run_ingest(sitrep_text, voice)
 
     asyncio.run(do_sync())
@@ -422,8 +441,14 @@ def live(refresh: int = 2):
         from rich.table import Table
         from rich.layout import Layout
         from rich import box
+        from radar.core.ingest import NewsWire
 
-        adsb, aprs, sector = ADSBScanner(), APRSStreamer(), SectorScanner()
+        adsb, aprs, sector, news_wire = (
+            ADSBScanner(),
+            APRSStreamer(),
+            SectorScanner(),
+            NewsWire(),
+        )
         asyncio.create_task(aprs.start_stream())
         layout = Layout()
         layout.split(
@@ -436,9 +461,14 @@ def live(refresh: int = 2):
         layout["right"].split_column(Layout(name="aprs"), Layout(name="news"))
         with Live(layout, screen=True, refresh_per_second=1):
             while True:
-                ac_data = await adsb.get_live_data()
-                metar = await sector.get_metar()
-                atmos = await sector.get_atmos_weather()
+                # Fetch data concurrently
+                ac_data, metar, atmos, headlines = await asyncio.gather(
+                    adsb.get_live_data(),
+                    sector.get_metar(),
+                    sector.get_atmos_weather(),
+                    news_wire.get_headlines(),
+                )
+
                 layout["header"].update(
                     Panel(
                         f"[bold yellow]📡 RADAR HUD[/bold yellow] | {datetime.now().strftime('%H:%M:%S')}",
@@ -467,7 +497,12 @@ def live(refresh: int = 2):
                     aprs_table.add_row(p[:50])
                 layout["aprs"].update(Panel(aprs_table, title="APRS"))
 
-                layout["news"].update(Panel("Scanning Headlines...", title="News"))
+                # News Table
+                news_table = Table(show_header=False, box=None, expand=True)
+                for h in headlines.split("\n")[:8]:
+                    news_table.add_row(f"[dim]![/dim] {h.replace('- ', '')[:55]}")
+                layout["news"].update(Panel(news_table, title="News Wire"))
+
                 await asyncio.sleep(refresh)
 
     try:
@@ -481,26 +516,55 @@ def brief(voice: bool = True):
     """Strategic brief."""
 
     async def do_brief():
+        from radar.core.ingest import IntelligenceAgent, NewsWire
+
         intel = IntelligenceAgent()
+        news_wire = NewsWire()
+
         async with async_session() as session:
             last_24h = datetime.now() - timedelta(hours=24)
-            signals = (
-                (
-                    await session.execute(
-                        select(Signal).where(Signal.date >= last_24h).limit(20)
-                    )
-                )
-                .scalars()
-                .all()
+
+            # 1. Fetch Strategic Signals
+            sig_stmt = select(Signal).where(Signal.date >= last_24h).limit(20)
+            signals = (await session.execute(sig_stmt)).scalars().all()
+
+            # 2. Fetch Latest Tactical SITREPs (The last 2)
+            sitrep_stmt = (
+                select(Signal)
+                .where(Signal.title.contains("SITREP"))
+                .order_by(desc(Signal.date))
+                .limit(2)
             )
-            entities = (await session.execute(select(Entity).limit(10))).scalars().all()
+            sitreps = (await session.execute(sitrep_stmt)).scalars().all()
+
+            # 3. Fetch Recent Trends
+            trend_stmt = select(Trend).order_by(desc(Trend.id)).limit(10)
+            trends = (await session.execute(trend_stmt)).scalars().all()
+
+            # 4. Fetch Global Headlines
+            news_headlines = await news_wire.get_headlines()
+
             context = {
-                "signals": [s.title for s in signals],
-                "entities": [e.name for e in entities],
-                "trends": [],
+                "signals": [s.title for s in signals if "SITREP" not in s.title],
+                "trends": [t.name for t in trends],
+                "tactical": "\n\n".join(
+                    [f"--- {s.title} ---\n{s.content[:1000]}" for s in sitreps]
+                ),
+                "news": news_headlines,
             }
-            text = await intel.generate_briefing(context)
-            console.print(Panel(text, title="Briefing"))
+
+            with console.status(
+                "[bold yellow]IVXXa is synthesizing the briefing...[/bold yellow]"
+            ):
+                text = await intel.generate_briefing(context)
+
+            console.print(
+                Panel(
+                    text,
+                    title="[bold green]Strategic Intelligence Briefing[/bold green]",
+                )
+            )
+
             if voice:
                 import subprocess
 
