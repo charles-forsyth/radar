@@ -15,6 +15,7 @@ from radar.core.ingest import (
     APRSStreamer,
     SectorScanner,
     TacticalAgent,
+    RSSIngestAgent,
 )
 from radar.config import settings
 from radar.db.engine import set_global_connector, async_session
@@ -200,80 +201,176 @@ def sync(
     """Unified intelligence sync."""
 
     async def do_sync():
-        if daily:
-            import os
+        import os
 
-            # 1. Standard Deep Research Sweep
-            targets = "sweep_targets.txt"
-            if os.path.exists(targets):
-                with open(targets, "r") as f:
-                    topics = [line.strip() for line in f if line.strip()]
-                agent = DeepResearchAgent()
-                for topic in topics:
-                    console.print(f"[cyan]Researching:[/cyan] {topic}")
-                    try:
-                        text = await agent.research(topic)
-                        await run_ingest(
-                            f"Title: Deep Research - {topic}\n\n{text}", voice
-                        )
-                    except Exception as e:
-                        console.print(f"[red]Error {topic}:[/red] {e}")
+        # Connect to DB
+        connector = None
+        if settings.INSTANCE_CONNECTION_NAME:
+            loop = asyncio.get_running_loop()
+            connector = Connector(loop=loop)
+            set_global_connector(connector)
+            await connector.__aenter__()
 
-            # 2. Dynamic Web Browser Sweep
-            dynamic_targets = "dynamic_targets.txt"
-            if os.path.exists(dynamic_targets):
-                with open(dynamic_targets, "r") as f:
-                    dyn_targets = [
-                        line.strip() for line in f if line.strip() and "|" in line
-                    ]
-
-                if dyn_targets:
-                    console.print(
-                        "[bold blue]Starting Dynamic Browser Sweep...[/bold blue]"
-                    )
-                    browser_agent = BrowserIngestAgent()
-                    for target in dyn_targets:
-                        parts = target.split("|", 1)
-                        if len(parts) == 2:
-                            url = parts[0].strip()
-                            instructions = parts[1].strip()
-                            console.print(f"[cyan]Dynamic Scrape:[/cyan] {url}")
-                            try:
-                                text = await browser_agent.extract(url, instructions)
-                                final_text = (
-                                    f"Title: Dynamic Web Extraction - {url}\n\n{text}"
-                                )
-                                await run_ingest(final_text, voice)
-                            except Exception as e:
-                                console.print(
-                                    f"[red]Dynamic Scrape failed for {url}:[/red] {e}"
-                                )
-
-        if tactical:
-            from sqlalchemy import select, desc
-
-            console.print("[bold blue]Executing Tactical SITREP Ingest...[/bold blue]")
-
-            # Fetch previous SITREP for delta analysis
-            prev_sitrep = None
-            async with async_session() as session:
-                stmt = (
-                    select(Signal)
-                    .where(Signal.title.contains("SITREP"))
-                    .order_by(desc(Signal.date))
-                    .limit(1)
+        try:
+            if daily:
+                console.print(
+                    "[bold blue]Starting Daily Intelligence Sweep...[/bold blue]"
                 )
-                result = await session.execute(stmt)
-                last_sig = result.scalar_one_or_none()
-                if last_sig:
-                    prev_sitrep = last_sig.content
+                # 1. Standard Deep Research Sweep
+                targets = "sweep_targets.txt"
+                if os.path.exists(targets):
+                    with open(targets, "r") as f:
+                        topics = [line.strip() for line in f if line.strip()]
+                    agent = DeepResearchAgent()
+                    for topic in topics:
+                        console.print(f"[cyan]Researching:[/cyan] {topic}")
+                        try:
+                            text = await agent.research(topic)
+                            await run_ingest(
+                                f"Title: Deep Research - {topic}\n\n{text}", voice
+                            )
+                        except Exception as e:
+                            console.print(f"[red]Error {topic}:[/red] {e}")
 
-            sitrep_text = await TacticalAgent().generate_full_sitrep(
-                previous_sitrep=prev_sitrep
-            )
-            await run_ingest(sitrep_text, voice)
+                # 2. Automated News Wire Ingestion
+                console.print(
+                    "\n[bold blue]Starting Global News Ingestion...[/bold blue]"
+                )
+                rss_agent = RSSIngestAgent()
+                news_results = await rss_agent.sync_news()
+                for signal, kg in news_results:
+                    # Direct ingestion logic to avoid shell overhead
+                    await save_ingest_to_db(signal, kg)
+                    console.print(f"[green]Ingested News:[/green] {signal.title}")
+
+                # 3. Dynamic Web Browser Sweep
+
+                dynamic_targets = "dynamic_targets.txt"
+                if os.path.exists(dynamic_targets):
+                    with open(dynamic_targets, "r") as f:
+                        dyn_targets = [
+                            line.strip() for line in f if line.strip() and "|" in line
+                        ]
+
+                    if dyn_targets:
+                        console.print(
+                            "[bold blue]Starting Dynamic Browser Sweep...[/bold blue]"
+                        )
+                        browser_agent = BrowserIngestAgent()
+                        for target in dyn_targets:
+                            parts = target.split("|", 1)
+                            if len(parts) == 2:
+                                url = parts[0].strip()
+                                instructions = parts[1].strip()
+                                console.print(f"[cyan]Dynamic Scrape:[/cyan] {url}")
+                                try:
+                                    text = await browser_agent.extract(
+                                        url, instructions
+                                    )
+                                    final_text = f"Title: Dynamic Web Extraction - {url}\n\n{text}"
+                                    await run_ingest(final_text, voice)
+                                except Exception as e:
+                                    console.print(
+                                        f"[red]Dynamic Scrape failed for {url}:[/red] {e}"
+                                    )
+
+            if tactical:
+                from sqlalchemy import select, desc
+
+                console.print(
+                    "[bold blue]Executing Tactical SITREP Ingest...[/bold blue]"
+                )
+
+                # Fetch previous SITREP for delta analysis
+                prev_sitrep = None
+                async with async_session() as session:
+                    stmt = (
+                        select(Signal)
+                        .where(Signal.title.contains("SITREP"))
+                        .order_by(desc(Signal.date))
+                        .limit(1)
+                    )
+                    result = await session.execute(stmt)
+                    last_sig = result.scalar_one_or_none()
+                    if last_sig:
+                        prev_sitrep = last_sig.content
+
+                sitrep_text = await TacticalAgent().generate_full_sitrep(
+                    previous_sitrep=prev_sitrep
+                )
+                await run_ingest(sitrep_text, voice)
+
+        finally:
+            if connector:
+                await connector.__aexit__(None, None, None)
 
     asyncio.run(do_sync())
+
+
+async def save_ingest_to_db(signal, kg):
+    """Helper to persist a signal and its extraction to the database."""
+    from radar.core.ingest import IntelligenceAgent
+
+    intel = IntelligenceAgent()
+
+    items = [f"{e.name}: {e.description}" for e in kg.entities] + [
+        f"{t.name}: {t.description}" for t in kg.trends
+    ]
+    vectors = await intel.get_batch_embeddings(items) if items else []
+    ent_vecs, trend_vecs = (
+        vectors[: len(kg.entities)],
+        vectors[len(kg.entities) :],
+    )
+    async with async_session() as session:
+        session.add(signal)
+        await session.flush()
+        entity_map = {}
+        for idx, e in enumerate(kg.entities):
+            exist = (
+                await session.execute(select(Entity).where(Entity.name == e.name))
+            ).scalar_one_or_none()
+            if exist:
+                entity_map[e.name] = exist.id
+            else:
+                new_e = Entity(
+                    name=e.name,
+                    type=e.type,
+                    details={"description": e.description},
+                    vector=ent_vecs[idx] if idx < len(ent_vecs) else None,
+                )
+                session.add(new_e)
+                await session.flush()
+                entity_map[e.name] = new_e.id
+        for idx, t in enumerate(kg.trends):
+            if not (
+                await session.execute(select(Trend).where(Trend.name == t.name))
+            ).scalar_one_or_none():
+                session.add(
+                    Trend(
+                        name=t.name,
+                        description=t.description,
+                        velocity=t.velocity,
+                        vector=trend_vecs[idx] if idx < len(trend_vecs) else None,
+                    )
+                )
+        for c in kg.connections:
+            sid, tid = (
+                entity_map.get(c.source_entity_name),
+                entity_map.get(c.target_entity_name),
+            )
+            if sid and tid:
+                session.add(
+                    Connection(
+                        source_uuid=sid,
+                        target_uuid=tid,
+                        type=c.type,
+                        meta_data={
+                            "description": c.description,
+                            "signal_id": str(signal.id),
+                        },
+                    )
+                )
+        await session.commit()
 
 
 async def run_ingest(text: str, voice: bool):
@@ -521,61 +618,73 @@ def brief(voice: bool = True):
         intel = IntelligenceAgent()
         news_wire = NewsWire()
 
-        async with async_session() as session:
-            last_24h = datetime.now() - timedelta(hours=24)
+        # Connect to DB
+        connector = None
+        if settings.INSTANCE_CONNECTION_NAME:
+            loop = asyncio.get_running_loop()
+            connector = Connector(loop=loop)
+            set_global_connector(connector)
+            await connector.__aenter__()
 
-            # 1. Fetch Strategic Signals
-            sig_stmt = select(Signal).where(Signal.date >= last_24h).limit(20)
-            signals = (await session.execute(sig_stmt)).scalars().all()
+        try:
+            async with async_session() as session:
+                last_24h = datetime.now() - timedelta(hours=24)
 
-            # 2. Fetch Latest Tactical SITREPs (The last 2)
-            sitrep_stmt = (
-                select(Signal)
-                .where(Signal.title.contains("SITREP"))
-                .order_by(desc(Signal.date))
-                .limit(2)
-            )
-            sitreps = (await session.execute(sitrep_stmt)).scalars().all()
+                # 1. Fetch Strategic Signals
+                sig_stmt = select(Signal).where(Signal.date >= last_24h).limit(20)
+                signals = (await session.execute(sig_stmt)).scalars().all()
 
-            # 3. Fetch Recent Trends
-            trend_stmt = select(Trend).order_by(desc(Trend.id)).limit(10)
-            trends = (await session.execute(trend_stmt)).scalars().all()
-
-            # 4. Fetch Global Headlines
-            news_headlines = await news_wire.get_headlines()
-
-            context = {
-                "signals": [s.title for s in signals if "SITREP" not in s.title],
-                "trends": [t.name for t in trends],
-                "tactical": "\n\n".join(
-                    [f"--- {s.title} ---\n{s.content[:1000]}" for s in sitreps]
-                ),
-                "news": news_headlines,
-            }
-
-            with console.status(
-                "[bold yellow]IVXXa is synthesizing the briefing...[/bold yellow]"
-            ):
-                text = await intel.generate_briefing(context)
-
-            console.print(
-                Panel(
-                    text,
-                    title="[bold green]Strategic Intelligence Briefing[/bold green]",
+                # 2. Fetch Latest Tactical SITREPs (The last 2)
+                sitrep_stmt = (
+                    select(Signal)
+                    .where(Signal.title.contains("SITREP"))
+                    .order_by(desc(Signal.date))
+                    .limit(2)
                 )
-            )
+                sitreps = (await session.execute(sitrep_stmt)).scalars().all()
 
-            if voice:
-                import subprocess
+                # 3. Fetch Recent Trends
+                trend_stmt = select(Trend).order_by(desc(Trend.id)).limit(10)
+                trends = (await session.execute(trend_stmt)).scalars().all()
 
-                subprocess.run(
-                    [
-                        "/home/chuck/bin/python3",
-                        "/home/chuck/Scripts/generate_voice.py",
-                        "--temp",
+                # 4. Fetch Global Headlines
+                news_headlines = await news_wire.get_headlines()
+
+                context = {
+                    "signals": [s.title for s in signals if "SITREP" not in s.title],
+                    "trends": [t.name for t in trends],
+                    "tactical": "\n\n".join(
+                        [f"--- {s.title} ---\n{s.content[:1000]}" for s in sitreps]
+                    ),
+                    "news": news_headlines,
+                }
+
+                with console.status(
+                    "[bold yellow]IVXXa is synthesizing the briefing...[/bold yellow]"
+                ):
+                    text = await intel.generate_briefing(context)
+
+                console.print(
+                    Panel(
                         text,
-                    ]
+                        title="[bold green]Strategic Intelligence Briefing[/bold green]",
+                    )
                 )
+
+                if voice:
+                    import subprocess
+
+                    subprocess.run(
+                        [
+                            "/home/chuck/bin/python3",
+                            "/home/chuck/Scripts/generate_voice.py",
+                            "--temp",
+                            text,
+                        ]
+                    )
+        finally:
+            if connector:
+                await connector.__aexit__(None, None, None)
 
     asyncio.run(do_brief())
 

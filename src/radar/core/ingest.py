@@ -564,6 +564,51 @@ class NewsWire:
         return "\n".join(all_headlines[:10])
 
 
+class RSSIngestAgent:
+    def __init__(self):
+        self.wire = NewsWire()
+        self.intel = IntelligenceAgent()
+
+    async def sync_news(self) -> List[Tuple[Signal, KnowledgeGraphExtraction]]:
+        """Fetch full content of latest news items and ingest them."""
+        import httpx
+        from bs4 import BeautifulSoup
+
+        results = []
+        async with httpx.AsyncClient() as client:
+            for url in self.wire.feeds:
+                try:
+                    response = await client.get(url, timeout=5.0)
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, "xml")
+                        items = soup.find_all("item")[
+                            :2
+                        ]  # Just 2 most recent to avoid bloat
+                        for item in items:
+                            if item.title and item.link:
+                                title = item.title.text.strip()
+                                link = item.link.text.strip()
+                            else:
+                                continue
+
+                            # Fetch full content
+                            article_resp = await client.get(link, timeout=10.0)
+                            if article_resp.status_code == 200:
+                                art_soup = BeautifulSoup(
+                                    article_resp.text, "html.parser"
+                                )
+                                # Simple body extraction
+                                text = art_soup.get_text(separator=" ", strip=True)
+
+                                # Process as signal
+                                final_text = f"Title: {title}\nSource: {url}\nLink: {link}\n\n{text[:10000]}"
+                                signal, kg = await self.intel.parse(final_text)
+                                results.append((signal, kg))
+                except Exception:
+                    continue
+        return results
+
+
 class SectorScanner:
     def __init__(self, location: str = "Tioga County, PA"):
         self.location = location
