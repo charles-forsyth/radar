@@ -6,7 +6,7 @@ import logging
 from google import genai
 from radar.config import settings
 from pydantic import BaseModel
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from radar.core.models import KnowledgeGraphExtraction
 
 logger = logging.getLogger(__name__)
@@ -154,20 +154,27 @@ Maintain a professional, sharp, and insightful tone. Use Markdown formatting.
         return response.text
 
     async def generate_briefing(self, context: dict) -> str:
-        """Synthesize a concise verbal briefing of recent intelligence."""
+        """Synthesize an insightful, inclusive verbal briefing of recent intelligence."""
         prompt = f"""
-You are IVXXa, the Captain's second in command. Provide a punchy, 60-second verbal intelligence briefing based on the activity from the last 24 hours.
+You are IVXXa, the Captain's second in command. Provide a sophisticated, inclusive, and highly insightful 90-second verbal intelligence briefing.
 
-RECENT ACTIVITY:
-- New Signals: {context.get("signals", [])}
-- New Entities: {context.get("entities", [])}
-- New Trends: {context.get("trends", [])}
+RECENT ACTIVITY (LAST 24 HOURS):
+- Strategic Signals: {context.get("signals", [])}
+- Emerging Trends: {context.get("trends", [])}
+- Tactical Sensors (Air/RF/Weather): {context.get("tactical", "No tactical data captured.")}
+- Global News Wire: {context.get("news", "No news signals.")}
 
 INSTRUCTIONS:
-1. Start with "Good morning, Captain. Here is your strategic intelligence update." (or appropriate time of day).
-2. Highlight the 3 most significant developments.
-3. Keep the tone professional, loyal, and strategically sharp.
-4. Total length should be around 150-200 words.
+1. Start with "Captain, IVXXa reporting. Here is your synthesized intelligence briefing."
+2. DO NOT just list data. Perform "DOT CONNECTING":
+   - How do the global tech trends impact our local tactical posture?
+   - Are there correlations between the weather/hydrology and our field readiness?
+   - How do the latest cyber threats impact our regional infrastructure?
+3. Maintain a tone of absolute loyalty, strategic foresight, and operational urgency.
+4. Ensure the briefing is inclusive of all data domains: Global Strategy, Local Tactics, and Tech/SDR developments.
+5. End with a "Platform Readiness" status.
+
+Total length: 250-300 words. Be sharp.
 """
         response = self.client.models.generate_content(
             model=settings.GEMINI_MODEL,
@@ -522,6 +529,41 @@ class CISAFeed:
             return f"CISA Error: {str(e)}"
 
 
+class NewsWire:
+    def __init__(self):
+        self.feeds = [
+            "https://www.hackaday.com/blog/feed/",
+            "https://www.rtl-sdr.com/feed/",
+            "https://www.hpcwire.com/feed/",
+            "https://feeds.feedburner.com/TheHackersNews",
+        ]
+
+    async def get_headlines(self) -> str:
+        """Fetch and synthesize headlines from technical news wires."""
+        import httpx
+        from bs4 import BeautifulSoup
+
+        all_headlines = []
+        async with httpx.AsyncClient() as client:
+            for url in self.feeds:
+                try:
+                    response = await client.get(url, timeout=5.0)
+                    if response.status_code == 200:
+                        soup = BeautifulSoup(response.text, "xml")
+                        items = soup.find_all("item")[:3]  # Top 3 from each
+                        for item in items:
+                            if item.title:
+                                title = item.title.text.strip()
+                                all_headlines.append(f"- {title}")
+                except Exception:
+                    continue
+
+        if not all_headlines:
+            return "No breaking news found in technical wires."
+
+        return "\n".join(all_headlines[:10])
+
+
 class SectorScanner:
     def __init__(self, location: str = "Tioga County, PA"):
         self.location = location
@@ -572,8 +614,8 @@ class TacticalAgent:
         self.nws = NWSAlerts()
         self.cisa = CISAFeed()
 
-    async def generate_full_sitrep(self) -> str:
-        """Fetch data from all sensors and synthesize a master SITREP."""
+    async def generate_full_sitrep(self, previous_sitrep: Optional[str] = None) -> str:
+        """Fetch data from all sensors and synthesize a master SITREP with optional delta analysis."""
         from datetime import datetime
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -597,10 +639,41 @@ class TacticalAgent:
             self.cisa.get_latest_vulns(),
         )
 
+        delta_analysis = ""
+        if previous_sitrep:
+            prompt = f"""
+Analyze the following two SITREPs and identify the specific DELTAS (changes). 
+Focus on:
+1. Shifting river levels or flow rates.
+2. Changes in aircraft density or noteworthy new callsigns.
+3. New severe weather alerts or cyber vulnerabilities.
+
+PREVIOUS SITREP:
+{previous_sitrep[:2000]}
+
+CURRENT DATA:
+{adsb_data}
+{usgs_data}
+{nws_data}
+
+OUTPUT:
+Provide a concise, bulleted list of the most significant changes.
+"""
+            from google import genai
+
+            client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            delta_resp = client.models.generate_content(
+                model=settings.GEMINI_MODEL,
+                contents=prompt,
+            )
+            delta_analysis = (
+                f"\n## TACTICAL DELTAS (Since Last Update)\n{delta_resp.text}\n"
+            )
+
         sitrep = f"""Title: Master Tactical SITREP - {timestamp}
 Source: Integrated Sensor Array
 Location: Tioga County Sector (41.8N, 77.1W)
-
+{delta_analysis}
 ## ENVIRONMENTAL & SUSTAINMENT DATA
 - **Aviation Weather (Atmos):** 
 {weather_data}
