@@ -1,0 +1,33 @@
+Category,Topic,Source/Context,Frequency
+SIGINT/RF,Tioga County Emergency Monitoring,VHF/UHF Repeaters (Police/Fire/EMS),High
+SIGINT/RF,GMRS Operations (WRZN267),Handheld and Base Station Usage,Medium
+SIGINT/RF,VHF Marine Radio,Safety Channel 16 and Ship-to-Ship,Seasonal (Boat)
+SIGINT/RF,HAM Radio HF Propagation,Global long-distance (DX) communication,Medium
+SIGINT/RF,Meshtastic / LoRa Mesh,906.875 MHz Community Mesh Networks,High
+SIGINT/RF,ADS-B Aircraft Tracking,Real-time regional flight data (1090/978 MHz),Low
+SIGINT/RF,Antenna Design,Portable and temporary installations,Medium
+SIGINT/RF,SDR Monitoring,Broadband spectral analysis and decoding,Medium
+SIGINT/RF,HAM Callsign Lookup Tool,Tool development and API integration,Low
+Personal,Kayaking Pine Creek Gorge,Water Levels (USGS 01548500) and Permits,Seasonal (Spring)
+Personal,Kayaking Susquehanna River,Montoursville to Montgomery & Petroglyph trips,Seasonal (Summer)
+Personal,Fishing,Local PA/NY freshwater spots and techniques,Seasonal (Summer)
+Personal,Geocaching,New caches and trackables in Tioga/Tompkins,Medium
+Personal,Camping,PA DCNR site availability and gear testing,Medium
+Personal,Sailboat Maintenance (O'Day 27),Arcturus winter refit and spring prep,High
+Personal,Financial Independence,Debt Avalanche progress and budget tracking,Monthly
+Personal,Property Management,Tioga Rental maintenance and logistics,Medium
+Personal,Digital Second Brain,System automation and database improvements,High
+Personal,UCR Research Computing,Strategic initiatives and team management,Daily (Work)
+Personal,AI Game Development,Auto-Galaga / Dungeon Hero reinforcement learning,Medium
+Personal,Web Mapping & Visualization,Trailblazer / High-Performance Research Network / LoRaWAN tools,Medium
+Personal,Workflow Automation,Workflow Builder development,Low
+Personal,AI Prompt Engineering,UCR Researcher AI Prompt Gallery,Low
+Personal,Simulation Modeling,HPC Workflow / MJ Plant Simulation,Low
+Professional,HPC Architecture,Hardware/Provisioning/Schedulers (charlesforsyth.github.io),High
+Professional,Cloud HPC,HPC in the Cloud (AWS/GCP),Medium
+Professional,HPC Monitoring & Metrics,System health and performance tracking,Medium
+Professional,Linux Systems Administration,Enterprise-level Linux basics and optimization,Medium
+Professional,Research IT Governance,UC System-wide and Campus IT Leadership,Daily
+SIGINT/RF,LoRa,Long-range low-power modulation technology,Medium
+SIGINT/RF,LoRaWAN,Wide Area Network protocol for IoT,Medium
+SIGINT/RF,Meshtastic,Advanced mesh networking and node optimization,High
