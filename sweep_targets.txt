@@ -1,0 +1,32 @@
+Tioga County Emergency Monitoring
+GMRS Operations (WRZN267)
+VHF Marine Radio
+HAM Radio HF Propagation
+Meshtastic / LoRa Mesh
+ADS-B Aircraft Tracking
+Antenna Design
+SDR Monitoring
+HAM Callsign Lookup Tool
+Kayaking Pine Creek Gorge
+Kayaking Susquehanna River
+Fishing
+Geocaching
+Camping
+Sailboat Maintenance (O'Day 27)
+Financial Independence
+Property Management
+Digital Second Brain
+UCR Research Computing
+AI Game Development
+Web Mapping & Visualization
+Workflow Automation
+AI Prompt Engineering
+Simulation Modeling
+HPC Architecture
+Cloud HPC
+HPC Monitoring & Metrics
+Linux Systems Administration
+Research IT Governance
+LoRa
+LoRaWAN
+Meshtastic

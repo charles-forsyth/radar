@@ -118,13 +118,12 @@ def render_entities(entities: List[Entity]) -> Panel:
     )
 
 
-def render_dashboard(
-    console: Console,
+def render_dashboard_layout(
     signals: List[Signal],
     entities: List[Entity],
     trends: List[Trend],
     stats: dict,
-):
+) -> Layout:
     layout = create_layout()
 
     layout["header"].update(render_header())
@@ -140,4 +139,15 @@ def render_dashboard(
         Panel(Align.center("[dim]Press Ctrl+C to exit[/dim]"), style="white on black")
     )
 
+    return layout
+
+
+def render_dashboard(
+    console: Console,
+    signals: List[Signal],
+    entities: List[Entity],
+    trends: List[Trend],
+    stats: dict,
+):
+    layout = render_dashboard_layout(signals, entities, trends, stats)
     console.print(layout)

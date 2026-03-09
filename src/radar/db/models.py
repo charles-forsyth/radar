@@ -30,7 +30,7 @@ class Signal(SQLModel, table=True):
     content: str
     raw_text: Optional[str] = None
     source: str = "web"
-    vector: Optional[List[float]] = Field(default=None, sa_column=Column(Vector(768)))
+    vector: Optional[List[float]] = Field(default=None, sa_column=Column(Vector(3072)))
 
 
 class Trend(SQLModel, table=True):
@@ -38,7 +38,7 @@ class Trend(SQLModel, table=True):
     name: str = Field(unique=True, index=True)
     description: str
     velocity: str = "emerging"
-    vector: Optional[List[float]] = Field(default=None, sa_column=Column(Vector(768)))
+    vector: Optional[List[float]] = Field(default=None, sa_column=Column(Vector(3072)))
 
 
 class Entity(SQLModel, table=True):
@@ -46,7 +46,7 @@ class Entity(SQLModel, table=True):
     name: str = Field(unique=True, index=True)
     type: EntityType
     details: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
-    vector: Optional[List[float]] = Field(default=None, sa_column=Column(Vector(768)))
+    vector: Optional[List[float]] = Field(default=None, sa_column=Column(Vector(3072)))
 
 
 class Connection(SQLModel, table=True):
@@ -55,3 +55,17 @@ class Connection(SQLModel, table=True):
     target_uuid: uuid.UUID = Field(index=True)
     type: ConnectionType
     meta_data: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+
+
+class ChatSession(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    created_at: datetime = Field(default_factory=datetime.now)
+    title: Optional[str] = None
+
+
+class ChatMessage(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    session_id: uuid.UUID = Field(index=True)
+    role: str  # "user" or "assistant"
+    content: str
+    created_at: datetime = Field(default_factory=datetime.now)
