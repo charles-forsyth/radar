@@ -30,3 +30,26 @@ Research IT Governance
 LoRa
 LoRaWAN
 Meshtastic
+Local Edge LLMs on Raspberry Pi
+Multi-Agent Frameworks (LangGraph, CrewAI, AutoGen)
+Advanced RAG (GraphRAG, Matryoshka embeddings)
+ATAK Integration with Meshtastic and LoRa
+SDRTrunk Automation for P25 Decoding
+NOAA/Meteor M2 Satellite Imagery Decoding
+Slurm Power-Aware Scheduling
+Multi-Instance GPU (MIG) Architecture
+Ceph and DAOS for AI Workloads
+Off-grid Solar Power for Remote Repeaters
+AI Workflows for Property Management Accounting
+Tobyhanna Army Depot (Monroe County, PA) Logistics & C4ISR
+Fort Indiantown Gap (Lebanon County, PA) PA National Guard
+Binghamton / Lockheed Martin (Broome County, NY) Aerospace Defense
+Scranton (Lackawanna County, PA) Logistics Hub
+Harrisburg (Dauphin County, PA) Strategic Reserves and PEMA
+Global AI Threats and Autonomous Weapons Systems
+World Geopolitics, Military Conflicts, and State of War
+US Domestic Political Climate and Civil Unrest Indicators
+Global and Regional Economic Instability and Supply Chain Threats
+Rise of Surveillance, Police State Infrastructure, and Privacy Threats
+Local and Regional (Northeast US) Economic and Political Threat Vectors
+Flock Safety ALPR camera locations and deployments in Tioga County PA and surrounding 100 miles
