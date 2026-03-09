@@ -17,6 +17,6 @@ echo "--- Sweep started at $(date) ---" >> "$LOG_FILE"
 
 # Run the sweep
 # Using uv run directly. No --voice flag to avoid issues with audio in cron.
-"$UV_BIN" run radar sweep "$TOPICS_FILE" >> "$LOG_FILE" 2>&1
+"$UV_BIN" run radar sync --daily >> "$LOG_FILE" 2>&1
 
 echo "--- Sweep finished at $(date) ---" >> "$LOG_FILE"

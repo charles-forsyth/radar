@@ -85,3 +85,12 @@ class Alert(SQLModel, table=True):
     signal_id: uuid.UUID = Field(index=True)
     reason: str
     created_at: datetime = Field(default_factory=datetime.now)
+
+
+class TacticalAlert(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    domain: str  # AIR, RF, WEATHER, CYBER, GRID
+    severity: str  # INFO, WARNING, CRITICAL
+    message: str
+    data_context: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.now)
