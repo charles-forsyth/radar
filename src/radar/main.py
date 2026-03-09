@@ -441,6 +441,8 @@ async def save_ingest_to_db(signal, kg):
             ).scalar_one_or_none()
             if exist:
                 entity_map[e.name] = exist.id
+                exist.last_seen = datetime.now()
+                session.add(exist)
             else:
                 new_e = Entity(
                     name=e.name,
@@ -452,9 +454,13 @@ async def save_ingest_to_db(signal, kg):
                 await session.flush()
                 entity_map[e.name] = new_e.id
         for idx, t in enumerate(kg.trends):
-            if not (
+            exist_trend = (
                 await session.execute(select(Trend).where(Trend.name == t.name))
-            ).scalar_one_or_none():
+            ).scalar_one_or_none()
+            if exist_trend:
+                exist_trend.last_seen = datetime.now()
+                session.add(exist_trend)
+            else:
                 session.add(
                     Trend(
                         name=t.name,
@@ -469,17 +475,30 @@ async def save_ingest_to_db(signal, kg):
                 entity_map.get(c.target_entity_name),
             )
             if sid and tid:
-                session.add(
-                    Connection(
-                        source_uuid=sid,
-                        target_uuid=tid,
-                        type=c.type,
-                        meta_data={
-                            "description": c.description,
-                            "signal_id": str(signal.id),
-                        },
+                exist_conn = (
+                    await session.execute(
+                        select(Connection)
+                        .where(Connection.source_uuid == sid)
+                        .where(Connection.target_uuid == tid)
+                        .where(Connection.type == c.type)
                     )
-                )
+                ).scalar_one_or_none()
+
+                if exist_conn:
+                    exist_conn.last_seen = datetime.now()
+                    session.add(exist_conn)
+                else:
+                    session.add(
+                        Connection(
+                            source_uuid=sid,
+                            target_uuid=tid,
+                            type=c.type,
+                            meta_data={
+                                "description": c.description,
+                                "signal_id": str(signal.id),
+                            },
+                        )
+                    )
         await session.commit()
 
 

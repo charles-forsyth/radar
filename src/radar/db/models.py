@@ -39,6 +39,8 @@ class Trend(SQLModel, table=True):
     description: str
     velocity: str = "emerging"
     vector: Optional[List[float]] = Field(default=None, sa_column=Column(Vector(3072)))
+    first_seen: datetime = Field(default_factory=datetime.now)
+    last_seen: datetime = Field(default_factory=datetime.now)
 
 
 class Entity(SQLModel, table=True):
@@ -47,6 +49,8 @@ class Entity(SQLModel, table=True):
     type: EntityType
     details: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
     vector: Optional[List[float]] = Field(default=None, sa_column=Column(Vector(3072)))
+    first_seen: datetime = Field(default_factory=datetime.now)
+    last_seen: datetime = Field(default_factory=datetime.now)
 
 
 class Connection(SQLModel, table=True):
@@ -55,6 +59,8 @@ class Connection(SQLModel, table=True):
     target_uuid: uuid.UUID = Field(index=True)
     type: ConnectionType
     meta_data: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+    first_seen: datetime = Field(default_factory=datetime.now)
+    last_seen: datetime = Field(default_factory=datetime.now)
 
 
 class ChatSession(SQLModel, table=True):
