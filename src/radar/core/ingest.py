@@ -337,14 +337,51 @@ class APRSStreamer:
         self.max_packets = 50
 
     async def get_snapshot_text(self) -> str:
-        if not self.packets:
-            return "No recent local APRS traffic captured."
+        import asyncio
 
-        lines = ["### APRS SITREP - Local Radio Traffic"]
-        # Include last 15 packets
-        for p in self.packets[-15:]:
-            lines.append(f"- {p}")
-        return "\n".join(lines)
+        # If we have packets from a live session, return them
+        if self.packets:
+            lines = ["### APRS SITREP - Local Radio Traffic"]
+            for p in self.packets[-15:]:
+                lines.append(f"- {p}")
+            return "\n".join(lines)
+
+        # If running as a standalone snapshot, we need to connect briefly
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(self.host, self.port), timeout=5.0
+            )
+            login_str = f"user {self.callsign} pass -1 vers RadarIntelligence 0.1 filter {self.filter_str}\n"
+            writer.write(login_str.encode())
+            await writer.drain()
+
+            lines = ["### APRS SITREP - Local Radio Traffic"]
+            packets_found = False
+
+            # Listen for 3 seconds to catch active traffic
+            start_time = asyncio.get_event_loop().time()
+            while (asyncio.get_event_loop().time() - start_time) < 3.0:
+                try:
+                    line = await asyncio.wait_for(reader.readline(), timeout=1.0)
+                    if not line:
+                        break
+
+                    packet_text = line.decode().strip()
+                    if packet_text and not packet_text.startswith("#"):
+                        lines.append(f"- {packet_text}")
+                        packets_found = True
+                except asyncio.TimeoutError:
+                    continue
+
+            writer.close()
+            await writer.wait_closed()
+
+            if packets_found:
+                return "\n".join(lines)
+            return "No local APRS traffic detected during the 3-second capture window."
+
+        except Exception as e:
+            return f"APRS Sensor Error: {e}"
 
     async def start_stream(self):
         import asyncio
@@ -373,6 +410,116 @@ class APRSStreamer:
         finally:
             writer.close()
             await writer.wait_closed()
+
+
+class USGSRiverGauge:
+    def __init__(
+        self, site_codes: List[str] = ["01548500", "01531500", "01531000", "01518700"]
+    ):
+        # Defaults: Pine Creek (Cedar Run), Susquehanna (Towanda), Susquehanna (Waverly NY), Tioga River (Tioga Jct)
+        self.site_codes = site_codes
+
+    async def get_levels(self) -> str:
+        import httpx
+
+        sites_str = ",".join(self.site_codes)
+        # 00060 is Discharge (cfs), 00065 is Gage height (ft)
+        url = f"https://waterservices.usgs.gov/nwis/iv/?format=json&sites={sites_str}&parameterCd=00060,00065&siteStatus=all"
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url)
+                if response.status_code != 200:
+                    return f"USGS API Error: {response.status_code}"
+
+                data = response.json()
+                results = []
+
+                # Parse USGS JSON structure
+                if "value" in data and "timeSeries" in data["value"]:
+                    for ts in data["value"]["timeSeries"]:
+                        site_name = ts["sourceInfo"]["siteName"]
+                        param_name = ts["variable"]["variableName"]
+                        if not ts["values"][0]["value"]:
+                            continue
+
+                        latest_val = ts["values"][0]["value"][0]["value"]
+                        unit = "ft" if "height" in param_name.lower() else "cfs"
+                        results.append(f"- {site_name}: {latest_val} {unit}")
+
+                if not results:
+                    return "No active gauge data found."
+
+                # Deduplicate slightly as USGS sends separate timeSeries for cfs and ft
+                return "\n".join(sorted(list(set(results))))
+        except Exception as e:
+            return f"USGS Error: {str(e)}"
+
+
+class NWSAlerts:
+    def __init__(self, lat: float = 41.8, lon: float = -77.1):
+        self.lat = lat
+        self.lon = lon
+        self.headers = {"User-Agent": "RadarTacticalHUD/1.0 (forsythc@ucr.edu)"}
+
+    async def get_alerts(self) -> str:
+        import httpx
+
+        url = f"https://api.weather.gov/alerts/active?point={self.lat},{self.lon}"
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=self.headers)
+                if response.status_code != 200:
+                    return f"NWS API Error: {response.status_code}"
+
+                data = response.json()
+                features = data.get("features", [])
+
+                if not features:
+                    return "No active severe weather alerts for this sector."
+
+                alerts = []
+                for f in features:
+                    props = f.get("properties", {})
+                    headline = props.get("headline", "Unknown Alert")
+                    alerts.append(f"⚠️ {headline}")
+
+                return "\n".join(alerts)
+        except Exception as e:
+            return f"NWS Error: {str(e)}"
+
+
+class CISAFeed:
+    async def get_latest_vulns(self) -> str:
+        import httpx
+
+        url = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url)
+                if response.status_code != 200:
+                    return f"CISA API Error: {response.status_code}"
+
+                data = response.json()
+                vulns = data.get("vulnerabilities", [])
+
+                if not vulns:
+                    return "No CISA vulnerability data found."
+
+                # Get the 3 most recently added to the catalog
+                recent = sorted(
+                    vulns, key=lambda x: x.get("dateAdded", ""), reverse=True
+                )[:3]
+
+                lines = []
+                for v in recent:
+                    lines.append(
+                        f"- {v.get('cveID')}: {v.get('vulnerabilityName')} (Added: {v.get('dateAdded')})"
+                    )
+
+                return "\n".join(lines)
+        except Exception as e:
+            return f"CISA Error: {str(e)}"
 
 
 class SectorScanner:
@@ -421,6 +568,9 @@ class TacticalAgent:
         self.adsb = ADSBScanner()
         self.aprs = APRSStreamer()
         self.sector = SectorScanner()
+        self.usgs = USGSRiverGauge()
+        self.nws = NWSAlerts()
+        self.cisa = CISAFeed()
 
     async def generate_full_sitrep(self) -> str:
         """Fetch data from all sensors and synthesize a master SITREP."""
@@ -428,28 +578,90 @@ class TacticalAgent:
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        adsb_data = await self.adsb.get_snapshot_text()
-        weather_data = await self.sector.get_metar()
+        # Gather all intel concurrently for speed
+        import asyncio
 
-        # APRS needs a listener to have data, so we'll report status if empty
-        aprs_data = await self.aprs.get_snapshot_text()
+        (
+            adsb_data,
+            weather_data,
+            aprs_data,
+            usgs_data,
+            nws_data,
+            cisa_data,
+        ) = await asyncio.gather(
+            self.adsb.get_snapshot_text(),
+            self.sector.get_atmos_weather(),
+            self.aprs.get_snapshot_text(),
+            self.usgs.get_levels(),
+            self.nws.get_alerts(),
+            self.cisa.get_latest_vulns(),
+        )
 
         sitrep = f"""Title: Master Tactical SITREP - {timestamp}
 Source: Integrated Sensor Array
 Location: Tioga County Sector (41.8N, 77.1W)
 
-## ENVIRONMENTAL DATA
-- **Aviation Weather (KELM):** {weather_data}
+## ENVIRONMENTAL & SUSTAINMENT DATA
+- **Aviation Weather (Atmos):** 
+{weather_data}
+
+- **Severe Weather Alerts (NWS):** 
+{nws_data}
+
+- **Hydrology (USGS River Gauges):**
+{usgs_data}
 
 ## SIGNAL INTELLIGENCE (SIGINT)
 {adsb_data}
 
 {aprs_data}
 
+## CYBER INTELLIGENCE (CISA KEV)
+- **Recently Exploited Vulnerabilities:**
+{cisa_data}
+
 ## STRATEGIC CONTEXT
-This report represents a comprehensive snapshot of the local tactical environment, including aircraft telemetry and radio frequency activity.
+This report represents a comprehensive snapshot of the local tactical environment, including aircraft telemetry, radio frequency activity, hydrological levels for sustainment operations, and critical global cyber threats.
 """
         return sitrep
+
+
+class BrowserIngestAgent:
+    def __init__(self):
+        # We assume browser-use is installed globally or in the active miniconda env
+        self.cmd_base = [
+            "/home/chuck/miniconda3/bin/browser-use",
+            "--headless",
+            "--model",
+            "gemini-3-flash-preview",
+        ]
+
+    async def extract(self, url: str, instructions: str) -> str:
+        """Use browser-use to dynamically interact with and extract data from a URL."""
+        import subprocess
+        import asyncio
+
+        prompt = f"Go to {url} and {instructions}. Output only the final extracted data, nothing else."
+        cmd = self.cmd_base + ["-p", prompt]
+
+        try:
+            # We use asyncio.to_thread because subprocess.run is blocking,
+            # and browser-use can take a while to navigate and extract.
+            def run_browser():
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    return f"Browser Agent Error: {result.stderr}"
+
+                # Try to find the "Result:" block in the stdout to clean it up
+                output = result.stdout
+                if "📄 Result:" in output:
+                    return output.split("📄 Result:")[1].strip()
+                return output.strip()
+
+            return await asyncio.to_thread(run_browser)
+
+        except Exception as e:
+            return f"Browser Agent Exception: {e}"
 
 
 class WebIngestAgent:

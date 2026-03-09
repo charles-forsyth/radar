@@ -8,7 +8,7 @@ from rich.panel import Panel
 from google.cloud.sql.connector import Connector
 
 from radar.core.ingest import (
-    TextIngestAgent,
+    BrowserIngestAgent,
     IntelligenceAgent,
     DeepResearchAgent,
     ADSBScanner,
@@ -203,6 +203,7 @@ def sync(
         if daily:
             import os
 
+            # 1. Standard Deep Research Sweep
             targets = "sweep_targets.txt"
             if os.path.exists(targets):
                 with open(targets, "r") as f:
@@ -217,6 +218,37 @@ def sync(
                         )
                     except Exception as e:
                         console.print(f"[red]Error {topic}:[/red] {e}")
+
+            # 2. Dynamic Web Browser Sweep
+            dynamic_targets = "dynamic_targets.txt"
+            if os.path.exists(dynamic_targets):
+                with open(dynamic_targets, "r") as f:
+                    dyn_targets = [
+                        line.strip() for line in f if line.strip() and "|" in line
+                    ]
+
+                if dyn_targets:
+                    console.print(
+                        "[bold blue]Starting Dynamic Browser Sweep...[/bold blue]"
+                    )
+                    browser_agent = BrowserIngestAgent()
+                    for target in dyn_targets:
+                        parts = target.split("|", 1)
+                        if len(parts) == 2:
+                            url = parts[0].strip()
+                            instructions = parts[1].strip()
+                            console.print(f"[cyan]Dynamic Scrape:[/cyan] {url}")
+                            try:
+                                text = await browser_agent.extract(url, instructions)
+                                final_text = (
+                                    f"Title: Dynamic Web Extraction - {url}\n\n{text}"
+                                )
+                                await run_ingest(final_text, voice)
+                            except Exception as e:
+                                console.print(
+                                    f"[red]Dynamic Scrape failed for {url}:[/red] {e}"
+                                )
+
         if tactical:
             console.print("[blue]Ingesting SITREP...[/blue]")
             sitrep_text = await TacticalAgent().generate_full_sitrep()
@@ -226,6 +258,7 @@ def sync(
 
 
 async def run_ingest(text: str, voice: bool):
+    from radar.core.ingest import TextIngestAgent
     import subprocess
 
     agent = TextIngestAgent()
@@ -329,13 +362,33 @@ def ingest(
     voice: bool = typer.Option(
         False, "--voice", "-v", help="Enable voice confirmation."
     ),
+    instructions: Optional[str] = typer.Option(
+        None,
+        "--instructions",
+        "-i",
+        help="If source is a URL, use browser-use agent to navigate and extract data based on these instructions.",
+    ),
 ):
     """Ingest massive textual intelligence via stdin, file, or URL."""
     import sys
 
     if source and (source.startswith("http://") or source.startswith("https://")):
-        # Not implementing full web ingest in this block for brevity, fallback to manual text
-        pass
+        if instructions:
+            console.print(
+                f"[bold cyan]Deploying Browser Agent to:[/bold cyan] {source}"
+            )
+
+            async def run_dynamic():
+                agent = BrowserIngestAgent()
+                text = await agent.extract(source, instructions)
+                final_text = f"Title: Dynamic Web Extraction - {source}\n\n{text}"
+                await run_ingest(final_text, voice)
+
+            asyncio.run(run_dynamic())
+            return
+        else:
+            # Not implementing simple static web ingest in this block for brevity, fallback to manual text
+            pass
 
     text = ""
     if source == "-":
