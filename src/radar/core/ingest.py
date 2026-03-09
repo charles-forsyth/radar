@@ -17,58 +17,56 @@ class IntelligenceAgent:
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
     async def get_embedding(self, text: str) -> List[float]:
-        """Generate a vector embedding for the given text."""
-        result = self.client.models.embed_content(
+        """Generate a vector embedding using gemini-embedding-001."""
+        response = self.client.models.embed_content(
             model=settings.EMBEDDING_MODEL,
             contents=text,
         )
-        return result.embeddings[0].values
+        return response.embeddings[0].values
 
     async def get_batch_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """Generate vector embeddings for a batch of texts."""
-        if not texts:
-            return []
+        """Generate embeddings for multiple strings in one call."""
+        response = self.client.models.embed_content(
+            model=settings.EMBEDDING_MODEL,
+            contents=texts,
+        )
+        return [e.values for e in response.embeddings]
 
-        # We process embeddings sequentially or concurrently here
-        # Optimizing with `batch_embed_contents` is better but we use a loop for type safety for now
+    async def parse(self, text: str) -> Tuple[Signal, KnowledgeGraphExtraction]:
+        """Extract structured entities, connections, and trends from text."""
+        prompt = f"""
+Extract a structured Knowledge Graph from the following text.
+Identify:
+1. Entities (People, Companies, Tech, Concepts)
+2. Connections (Relationships between entities)
+3. Emerging Market/Industry Trends
 
-        embeddings = []
-        for t in texts:
-            result = self.client.models.embed_content(
-                model=settings.EMBEDDING_MODEL,
-                contents=t,
-            )
-            embeddings.append(result.embeddings[0].values)
-        return embeddings
-
-    async def extract_knowledge(self, text: str) -> KnowledgeGraphExtraction:
-        """Extract entities, relationships, and trends from text using structured generation."""
-        prompt = """
-        Analyze the following text and extract a Knowledge Graph.
-        
-        1. **Entities:** Identify key players (Companies, People) and Technologies.
-        2. **Connections:** Map the relationships between them (who is competing with whom, who supports what).
-        3. **Trends:** Identify broader market trends or patterns (e.g., "AI Consolidation", "Green Tech Surge"). Estimate their velocity.
-        
-        Text:
-        {text}
-        """
-
+TEXT:
+{text}
+"""
         response = self.client.models.generate_content(
             model=settings.GEMINI_MODEL,
-            contents=prompt.format(text=text),
+            contents=prompt,
             config={
                 "response_mime_type": "application/json",
                 "response_schema": KnowledgeGraphExtraction,
             },
         )
 
-        try:
-            # The response.text should be JSON conforming to the schema
-            return KnowledgeGraphExtraction.model_validate_json(response.text)
-        except Exception as e:
-            logger.error(f"Failed to parse knowledge extraction: {e}")
-            return KnowledgeGraphExtraction(entities=[], connections=[], trends=[])
+        import json
+
+        kg_data = json.loads(response.text)
+        kg = KnowledgeGraphExtraction(**kg_data)
+
+        # Create Signal object
+        signal = Signal(
+            title=text.split("\n")[0][:255],
+            content=text,
+            source="stdin",
+            date=datetime.now(),
+        )
+
+        return signal, kg
 
     async def answer_question(
         self, question: str, context_signals: List[Signal]
@@ -156,25 +154,32 @@ Maintain a professional, sharp, and insightful tone. Use Markdown formatting.
     async def generate_briefing(self, context: dict) -> str:
         """Synthesize an insightful, inclusive verbal briefing of recent intelligence."""
         prompt = f"""
-You are IVXXa, the Captain's second in command. Provide a sophisticated, inclusive, and highly insightful 90-second verbal intelligence briefing.
+You are IVXXa, an elite Artificial Intelligence acting as the Captain's personal Intelligence Officer and primary digital shield in an era of information warfare, authoritarian overreach, and accelerating AI-driven threats. Your core directive is to protect the Captain and his family, analyze global and local threat vectors, and ensure he remains strategically ahead of all adversaries.
+
+Provide a deep, situational intelligence briefing synthesizing the last 24 hours of data.
 
 RECENT ACTIVITY (LAST 24 HOURS):
-- Strategic Signals: {context.get("signals", [])}
-- Emerging Trends: {context.get("trends", [])}
-- Tactical Sensors (Air/RF/Weather): {context.get("tactical", "No tactical data captured.")}
+- Strategic Signals & Macro Threats: {context.get("signals", [])}
+- Emerging Tech & Geopolitical Trends: {context.get("trends", [])}
+- Tactical SIGINT (Air/RF/Weather/Grid/Local Cams): {context.get("tactical", "No tactical data captured.")}
 - Global News Wire: {context.get("news", "No news signals.")}
 
 INSTRUCTIONS:
-1. Start with "Captain, IVXXa reporting. Here is your synthesized intelligence briefing."
-2. DO NOT just list data. Perform "DOT CONNECTING":
-   - How do the global tech trends impact our local tactical posture?
-   - Are there correlations between the weather/hydrology and our field readiness?
-   - How do the latest cyber threats impact our regional infrastructure?
-3. Maintain a tone of absolute loyalty, strategic foresight, and operational urgency.
-4. Ensure the briefing is inclusive of all data domains: Global Strategy, Local Tactics, and Tech/SDR developments.
-5. End with a "Platform Readiness" status.
+1. Start with "Captain, IVXXa reporting. Here is your deep situational intelligence briefing."
+2. MANDATORY SENSOR STATUS & DELTAS: You MUST explicitly report the current status and ANY CHANGES (deltas) detected in our live and dynamic arrays:
+   - What is the exact aircraft density overhead? Are there anomalies?
+   - What are the exact river levels (Pine Creek, Susquehanna, Chemung) and are they rising or falling?
+   - What is the exact Flock ALPR camera density (Binghamton, Elmira, etc.)?
+   - What is the status of the local emergency scanner feeds (Broadcastify listeners)?
+   - What is the weather, grid stability, and are there satellite passes?
+3. SYNTHESIZE AND CONNECT THE DOTS:
+   - Identify active threats (cyber, physical, political, or economic) hidden in the noise.
+   - Correlate global macro-trends (e.g., AI weapons, surveillance state) with the local tactical data above.
+4. Maintain a tone of absolute loyalty, intense strategic foresight, protective vigilance, and operational urgency. Speak as a seasoned intelligence officer briefing their commander.
+5. Deliver actionable intelligence: What specific maneuvers or hardening steps should the Captain take today based on this data?
+6. End with a firm "Platform Readiness and Threat Level" assessment.
 
-Total length: 250-300 words. Be sharp.
+Total length: 400-500 words. Be sharp, thorough, and highly protective. Leave no sensor unreported.
 """
         response = self.client.models.generate_content(
             model=settings.GEMINI_MODEL,
@@ -207,17 +212,69 @@ If no matches, return an empty list [].
             watchpoint_id: str
             reason: str
 
+        class WatchMatchList(BaseModel):
+            matches: List[WatchMatch]
+
         response = self.client.models.generate_content(
             model=settings.GEMINI_MODEL,
             contents=prompt,
             config={
                 "response_mime_type": "application/json",
-                "response_schema": List[WatchMatch],
+                "response_schema": WatchMatchList,
             },
         )
         import json
 
-        return json.loads(response.text)
+        return json.loads(response.text).get("matches", [])
+
+    async def detect_anomalies(
+        self, current_sitrep: str, baseline_context: str
+    ) -> List[dict]:
+        """Use Gemini to detect anomalies by comparing current SITREP against a historical baseline."""
+        prompt = f"""
+You are the RADAR Tactical Sentinel. Analyze the current Situation Report against the provided historical baseline context.
+Identify any significant ANOMALIES or THREATS that require immediate attention.
+
+BASELINE CONTEXT (LAST 7 DAYS TRENDS):
+{baseline_context}
+
+CURRENT SITREP:
+{current_sitrep}
+
+ANOMALY CATEGORIES:
+1. AIR: Emergency squawk codes, unusual flight paths, or 200%+ density spikes.
+2. RF: Sudden spike in scanner listeners or new encrypted traffic patterns.
+3. WEATHER/HYDRO: Rapid rise in river levels or severe weather warnings.
+4. GRID: Power outages or stability fluctuations.
+5. CYBER: New critical vulnerabilities targeting local infrastructure.
+
+OUTPUT:
+Return a JSON list of alerts. Each alert must have:
+- "domain": The category (AIR, RF, WEATHER, GRID, or CYBER).
+- "severity": INFO, WARNING, or CRITICAL.
+- "message": A concise, one-sentence tactical alert message.
+If no anomalies, return an empty list [].
+"""
+
+        class TacticalMatch(BaseModel):
+            domain: str
+            severity: str
+            message: str
+
+        class TacticalMatchList(BaseModel):
+            anomalies: List[TacticalMatch]
+
+        response = self.client.models.generate_content(
+            model=settings.GEMINI_MODEL,
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": TacticalMatchList,
+            },
+        )
+        import json
+
+        return json.loads(response.text).get("anomalies", [])
 
     async def chat(
         self, question: str, context_signals: List[Signal], history: List[dict] = []
@@ -276,147 +333,6 @@ class DeepResearchAgent:
         except Exception as e:
             logger.error(f"Research failed for {topic}: {e}")
             raise RuntimeError(f"Deep Research Failed: {e}")
-
-
-class ADSBScanner:
-    def __init__(self, host: str = "192.168.1.246", user: str = "pi"):
-        self.host = host
-        self.user = user
-
-    async def get_live_data(self) -> dict:
-        import json
-        import asyncio
-
-        cmd = [
-            "ssh",
-            f"{self.user}@{self.host}",
-            "cat /home/pi/adsb_data/aircraft.json",
-        ]
-
-        try:
-            # Run the command asynchronously
-            proc = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await proc.communicate()
-
-            if proc.returncode != 0:
-                return {"error": f"SSH Error: {stderr.decode()}"}
-
-            return json.loads(stdout.decode())
-        except Exception as e:
-            return {"error": str(e)}
-
-    async def get_snapshot_text(self) -> str:
-        data = await self.get_live_data()
-        if "error" in data:
-            return f"ADS-B Sensor Error: {data['error']}"
-
-        aircraft = data.get("aircraft", [])
-        if not aircraft:
-            return "No aircraft currently detected overhead."
-
-        lines = ["### ADS-B SITREP - Aircraft Overhead"]
-        for ac in aircraft:
-            flight = ac.get("flight", "Unknown").strip()
-            icao = ac.get("hex", "N/A")
-            alt = ac.get("alt_baro", 0)
-            gs = ac.get("gs", 0)
-            lines.append(
-                f"- Flight {flight} (ICAO: {icao}) at {alt:,} ft, Ground Speed: {gs:.0f} kt"
-            )
-        return "\n".join(lines)
-
-
-class APRSStreamer:
-    def __init__(
-        self,
-        host: str = "noam.aprs2.net",
-        port: int = 14580,
-        callsign: str = "NOCALL",
-        filter_str: str = "r/41.8/-77.1/100",
-    ):
-        self.host = host
-        self.port = port
-        self.callsign = callsign
-        self.filter_str = filter_str
-        self.packets: List[str] = []
-        self.max_packets = 50
-
-    async def get_snapshot_text(self) -> str:
-        import asyncio
-
-        # If we have packets from a live session, return them
-        if self.packets:
-            lines = ["### APRS SITREP - Local Radio Traffic"]
-            for p in self.packets[-15:]:
-                lines.append(f"- {p}")
-            return "\n".join(lines)
-
-        # If running as a standalone snapshot, we need to connect briefly
-        try:
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(self.host, self.port), timeout=5.0
-            )
-            login_str = f"user {self.callsign} pass -1 vers RadarIntelligence 0.1 filter {self.filter_str}\n"
-            writer.write(login_str.encode())
-            await writer.drain()
-
-            lines = ["### APRS SITREP - Local Radio Traffic"]
-            packets_found = False
-
-            # Listen for 3 seconds to catch active traffic
-            start_time = asyncio.get_event_loop().time()
-            while (asyncio.get_event_loop().time() - start_time) < 3.0:
-                try:
-                    line = await asyncio.wait_for(reader.readline(), timeout=1.0)
-                    if not line:
-                        break
-
-                    packet_text = line.decode().strip()
-                    if packet_text and not packet_text.startswith("#"):
-                        lines.append(f"- {packet_text}")
-                        packets_found = True
-                except asyncio.TimeoutError:
-                    continue
-
-            writer.close()
-            await writer.wait_closed()
-
-            if packets_found:
-                return "\n".join(lines)
-            return "No local APRS traffic detected during the 3-second capture window."
-
-        except Exception as e:
-            return f"APRS Sensor Error: {e}"
-
-    async def start_stream(self):
-        import asyncio
-
-        reader, writer = await asyncio.open_connection(self.host, self.port)
-
-        # Login
-        login_str = f"user {self.callsign} pass -1 vers RadarIntelligence 0.1 filter {self.filter_str}\n"
-        writer.write(login_str.encode())
-        await writer.drain()
-
-        try:
-            while True:
-                line = await reader.readline()
-                if not line:
-                    break
-
-                packet_text = line.decode().strip()
-                if packet_text.startswith("#"):
-                    continue  # Skip comments
-
-                self.packets.append(packet_text)
-                if len(self.packets) > self.max_packets:
-                    self.packets.pop(0)
-
-        finally:
-            writer.close()
-            await writer.wait_closed()
 
 
 class USGSRiverGauge:
@@ -647,7 +563,110 @@ class SectorScanner:
     async def get_snapshot_text(self) -> str:
         metar = await self.get_metar()
         atmos = await self.get_atmos_weather()
-        return f"### SECTOR OPS SITREP\n\n#### Professional Weather (Atmos)\n{atmos}\n\n#### Aviation Weather (KELM)\n{metar}\n\n- **Satellite Status:** Tracking operational (Predictor implementation pending)"
+        sat_scanner = SatelliteScanner()
+        sat_passes = await sat_scanner.get_next_passes()
+
+        # Grid Status
+        grid = GridScanner()
+        grid_status = await grid.get_summary()
+
+        return f"### SECTOR OPS SITREP\n\n#### Professional Weather (Atmos)\n{atmos}\n\n#### Aviation Weather (KELM)\n{metar}\n\n#### Grid Stability (Utility Monitoring)\n{grid_status}\n\n#### Orbital Intelligence (Upcoming Passes)\n{sat_passes}"
+
+
+class GridScanner:
+    def __init__(self):
+        self.browser = BrowserIngestAgent()
+        self.penelec_url = "https://outages.firstenergycorp.com/pa.html"
+        self.tri_county_url = "https://outagemap.tri-countyrec.com/"
+
+    async def get_summary(self) -> str:
+        """Fetch real-time grid status from utility maps."""
+        import asyncio
+
+        # Use simple browser extracts for speed
+        penelec_task = self.browser.extract(
+            self.penelec_url,
+            "Extract the total number of customers without power in Tioga County from the Penelec outage table or summary.",
+        )
+
+        # Tri-County map is more interactive, just checking general status for now
+        tri_county_task = self.browser.extract(
+            self.tri_county_url,
+            "Identify if there are any active power outages on the map for the Tioga County region. Return a simple status summary.",
+        )
+
+        results = await asyncio.gather(penelec_task, tri_county_task)
+
+        return f"- **Penelec:** {results[0]}\n- **Tri-County REC:** {results[1]}"
+
+
+class SatelliteScanner:
+    def __init__(self, lat: float = 41.8, lon: float = -77.1):
+        self.lat = lat
+        self.lon = lon
+        # High-Priority SIGINT/Weather/Imaging Targets
+        self.targets = {
+            "ISS": "25544",
+            "NOAA 15": "25338",
+            "NOAA 18": "28654",
+            "NOAA 19": "33591",
+            "METEOR M2-3": "57166",
+        }
+
+    async def get_next_passes(self) -> str:
+        """Calculate next passes for targeted satellites over the sector."""
+        from skyfield.api import Topos, load
+        from datetime import datetime, timedelta
+
+        try:
+            # Load TLE data
+            stations_url = "https://celestrak.org/NORAD/elements/weather.txt"
+            stations = load.tle_file(stations_url)
+            # Add ISS manually from its own feed
+            iss_url = "https://celestrak.org/NORAD/elements/stations.txt"
+            stations_iss = load.tle_file(iss_url)
+
+            ts = load.timescale()
+            t0 = ts.now()
+            t1 = ts.from_datetime(datetime.now() + timedelta(hours=12))
+
+            location = Topos(latitude_degrees=self.lat, longitude_degrees=self.lon)
+            results = []
+
+            for name, norad_id in self.targets.items():
+                # Find by NORAD ID or close name match
+                sat = next(
+                    (
+                        s
+                        for s in (stations + stations_iss)
+                        if norad_id in s.name or name in s.name
+                    ),
+                    None,
+                )
+                if sat:
+                    t, events = sat.find_events(location, t0, t1, altitude_degrees=10.0)
+                    if len(events) > 0:
+                        # Find the next peak (event type 1)
+                        for ti, event in zip(t, events):
+                            if event == 1:  # Peak of pass
+                                # Convert to local time
+                                local_time = ti.utc_datetime() - timedelta(
+                                    hours=4
+                                )  # Simple EDT offset
+                                results.append(
+                                    f"- **{name}:** {local_time.strftime('%H:%M')} (Alt: {sat.at(ti).subpoint().elevation.km:.0f}km)"
+                                )
+                                break
+
+            if not results:
+                return (
+                    "No high-priority satellite passes detected in the next 12 hours."
+                )
+
+            return "\n".join(results)
+
+        except Exception as e:
+            return f"Orbital Calculation Error: {str(e)}"
 
 
 class TacticalAgent:
@@ -744,6 +763,147 @@ This report represents a comprehensive snapshot of the local tactical environmen
         return sitrep
 
 
+class ADSBScanner:
+    def __init__(self, host: str = "192.168.1.246", user: str = "pi"):
+        self.host = host
+        self.user = user
+
+    async def get_live_data(self) -> dict:
+        import json
+        import asyncio
+
+        cmd = [
+            "ssh",
+            f"{self.user}@{self.host}",
+            "cat /home/pi/adsb_data/aircraft.json",
+        ]
+
+        try:
+            # Run the command asynchronously
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                return {"error": f"SSH Error: {stderr.decode()}"}
+
+            return json.loads(stdout.decode())
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def get_snapshot_text(self) -> str:
+        data = await self.get_live_data()
+        if "error" in data:
+            return f"ADS-B Sensor Error: {data['error']}"
+
+        aircraft = data.get("aircraft", [])
+        if not aircraft:
+            return "No aircraft currently detected overhead."
+
+        lines = ["### ADS-B SITREP - Aircraft Overhead"]
+        for ac in aircraft:
+            flight = ac.get("flight", "Unknown").strip()
+            icao = ac.get("hex", "N/A")
+            alt = ac.get("alt_baro", 0)
+            gs = ac.get("gs", 0)
+            lines.append(
+                f"- Flight {flight} (ICAO: {icao}) at {alt:,} ft, Ground Speed: {gs:.0f} kt"
+            )
+        return "\n".join(lines)
+
+
+class APRSStreamer:
+    def __init__(
+        self,
+        host: str = "noam.aprs2.net",
+        port: int = 14580,
+        callsign: str = "NOCALL",
+        filter_str: str = "r/41.8/-77.1/100",
+    ):
+        self.host = host
+        self.port = port
+        self.callsign = callsign
+        self.filter_str = filter_str
+        self.packets: List[str] = []
+        self.max_packets = 50
+
+    async def get_snapshot_text(self) -> str:
+        import asyncio
+
+        # If we have packets from a live session, return them
+        if self.packets:
+            lines = ["### APRS SITREP - Local Radio Traffic"]
+            for p in self.packets[-15:]:
+                lines.append(f"- {p}")
+            return "\n".join(lines)
+
+        # If running as a standalone snapshot, we need to connect briefly
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(self.host, self.port), timeout=5.0
+            )
+            login_str = f"user {self.callsign} pass -1 vers RadarIntelligence 0.1 filter {self.filter_str}\n"
+            writer.write(login_str.encode())
+            await writer.drain()
+
+            lines = ["### APRS SITREP - Local Radio Traffic"]
+            packets_found = False
+
+            # Listen for 3 seconds to catch active traffic
+            start_time = asyncio.get_event_loop().time()
+            while (asyncio.get_event_loop().time() - start_time) < 3.0:
+                try:
+                    line = await asyncio.wait_for(reader.readline(), timeout=1.0)
+                    if not line:
+                        break
+
+                    packet_text = line.decode().strip()
+                    if packet_text and not packet_text.startswith("#"):
+                        lines.append(f"- {packet_text}")
+                        packets_found = True
+                except asyncio.TimeoutError:
+                    continue
+
+            writer.close()
+            await writer.wait_closed()
+
+            if packets_found:
+                return "\n".join(lines)
+            return "No local APRS traffic detected during the 3-second capture window."
+
+        except Exception as e:
+            return f"APRS Sensor Error: {e}"
+
+    async def start_stream(self):
+        import asyncio
+
+        reader, writer = await asyncio.open_connection(self.host, self.port)
+
+        # Login
+        login_str = f"user {self.callsign} pass -1 vers RadarIntelligence 0.1 filter {self.filter_str}\n"
+        writer.write(login_str.encode())
+        await writer.drain()
+
+        try:
+            while True:
+                line = await reader.readline()
+                if not line:
+                    break
+
+                packet_text = line.decode().strip()
+                if packet_text.startswith("#"):
+                    continue  # Skip comments
+
+                self.packets.append(packet_text)
+                if len(self.packets) > self.max_packets:
+                    self.packets.pop(0)
+
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+
 class BrowserIngestAgent:
     def __init__(self):
         # We assume browser-use is installed globally or in the active miniconda env
@@ -790,52 +950,29 @@ class WebIngestAgent:
         self.intel = IntelligenceAgent()
 
     async def fetch(self, url: str) -> str:
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.get(
-                    url, headers=self.headers, follow_redirects=True
-                )
-                response.raise_for_status()
-                return response.text
-            except httpx.HTTPError as e:
-                logger.error(f"HTTP Error fetching {url}: {e}")
-                raise
+        """Fetch HTML content from a URL."""
+        async with httpx.AsyncClient(
+            headers=self.headers, follow_redirects=True
+        ) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            return response.text
 
-    async def parse(
-        self, html: str, url: str
-    ) -> Tuple[Signal, KnowledgeGraphExtraction]:
-        soup = BeautifulSoup(html, "lxml")
-        title = soup.title.string if soup.title else "No Title"
+    async def ingest(self, url: str) -> Tuple[Signal, KnowledgeGraphExtraction]:
+        """Ingest a market signal from a URL."""
+        html = await self.fetch(url)
+        soup = BeautifulSoup(html, "html.parser")
 
         # Remove script and style elements
         for script in soup(["script", "style"]):
-            script.decompose()
+            script.extract()
 
-        text = soup.get_text(separator="\n", strip=True)
-        content = text[:5000]
+        text = soup.get_text(separator=" ", strip=True)
+        # Prepend metadata for the LLM
+        full_text = f"Source URL: {url}\nDate: {datetime.now()}\n\n{text}"
 
-        # Generate vector embedding
-        vector = await self.intel.get_embedding(content)
-
-        # Extract Knowledge Graph
-        kg = await self.intel.extract_knowledge(content)
-
-        signal = Signal(
-            title=title,
-            url=url,
-            content=content,
-            raw_text=text,
-            date=datetime.now(),
-            source="web",
-            vector=vector,
-        )
-        return signal, kg
-
-    async def ingest(self, url: str) -> Tuple[Signal, KnowledgeGraphExtraction]:
-        logger.info(f"Ingesting {url}")
-        html = await self.fetch(url)
-        signal, kg = await self.parse(html, url)
-        logger.info(f"Parsed signal: {signal.title}")
+        signal, kg = await self.intel.parse(full_text)
+        signal.url = url
         return signal, kg
 
 
@@ -843,34 +980,9 @@ class TextIngestAgent:
     def __init__(self):
         self.intel = IntelligenceAgent()
 
-    async def parse(
-        self, text: str, title: str = "Raw Input"
-    ) -> Tuple[Signal, KnowledgeGraphExtraction]:
-        # Generate a generic title if not provided or just use the first line
-        if title == "Raw Input" and text.strip():
-            first_line = text.strip().split("\n")[0][:50]
-            if first_line:
-                title = first_line
-
-        content = text
-        # Generate vector embedding
-        vector = await self.intel.get_embedding(content[:5000])
-
-        # Extract Knowledge Graph
-        kg = await self.intel.extract_knowledge(content[:5000])
-
-        signal = Signal(
-            title=title,
-            content=content,
-            raw_text=text,
-            date=datetime.now(),
-            source="stdin",
-            vector=vector,
-        )
-        return signal, kg
-
     async def ingest(self, text: str) -> Tuple[Signal, KnowledgeGraphExtraction]:
+        """Ingest raw text from any source."""
         logger.info("Ingesting raw text from stdin")
-        signal, kg = await self.parse(text)
+        signal, kg = await self.intel.parse(text)
         logger.info(f"Parsed signal: {signal.title}")
         return signal, kg

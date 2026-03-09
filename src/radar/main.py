@@ -27,8 +27,10 @@ from radar.db.models import (
     Trend,
     ChatSession,
     ChatMessage,
+    TacticalAlert,
 )
 from sqlalchemy import select, desc
+
 
 app = typer.Typer(name="radar", help="📡 Personal Industry Intelligence Brain")
 console = Console()
@@ -192,9 +194,17 @@ def main_callback():
 
 @app.command()
 def sync(
-    daily: bool = typer.Option(False, "--daily", "-d", help="Full research sweep."),
+    daily: bool = typer.Option(
+        False, "--daily", "-d", help="Run full topic research sweep (2x/day)."
+    ),
     tactical: bool = typer.Option(
-        False, "--tactical", "-t", help="Sensor SITREP ingest."
+        False,
+        "--tactical",
+        "-t",
+        help="Run a tactical sensor SITREP ingest (every 30m).",
+    ),
+    web: bool = typer.Option(
+        False, "--web", "-w", help="Run dynamic web browser scrapes (every 4h)."
     ),
     voice: bool = typer.Option(False, "--voice", "-v", help="Enable voice."),
 ):
@@ -243,8 +253,40 @@ def sync(
                     await save_ingest_to_db(signal, kg)
                     console.print(f"[green]Ingested News:[/green] {signal.title}")
 
-                # 3. Dynamic Web Browser Sweep
+                # 2.5 Roam Route Intel Ingestion
+                console.print(
+                    "\n[bold blue]Starting Roam Route Ingestion...[/bold blue]"
+                )
+                import subprocess
 
+                places = ["Dewey", "Rylie", "Pam", "Alex", "Mom", "Ember", "Arcturus"]
+                for place in places:
+                    console.print(f"[cyan]Routing to:[/cyan] {place}")
+                    try:
+                        roam_cmd = ["roam", "route", place, "--weather", "-F", "gas"]
+                        result = subprocess.run(
+                            roam_cmd, capture_output=True, text=True
+                        )
+                        if result.returncode == 0:
+                            # Remove ANSI escape codes
+                            import re
+
+                            clean_out = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+                            final_text = (
+                                f"Title: Route Intel - to {place}\n\n{clean_out}"
+                            )
+                            await run_ingest(final_text, voice)
+                        else:
+                            console.print(
+                                f"[red]Roam failed for {place}:[/red] {result.stderr}"
+                            )
+                    except Exception as e:
+                        console.print(
+                            f"[red]Roam execution error for {place}:[/red] {e}"
+                        )
+
+            if daily or web:
+                # 3. Dynamic Web Browser Sweep
                 dynamic_targets = "dynamic_targets.txt"
                 if os.path.exists(dynamic_targets):
                     with open(dynamic_targets, "r") as f:
@@ -276,14 +318,17 @@ def sync(
 
             if tactical:
                 from sqlalchemy import select, desc
+                from datetime import timedelta
 
                 console.print(
                     "[bold blue]Executing Tactical SITREP Ingest...[/bold blue]"
                 )
 
-                # Fetch previous SITREP for delta analysis
+                # Fetch previous SITREP for delta analysis and baseline
                 prev_sitrep = None
+                baseline_sitreps = []
                 async with async_session() as session:
+                    # Previous for delta
                     stmt = (
                         select(Signal)
                         .where(Signal.title.contains("SITREP"))
@@ -295,9 +340,74 @@ def sync(
                     if last_sig:
                         prev_sitrep = last_sig.content
 
-                sitrep_text = await TacticalAgent().generate_full_sitrep(
+                    # Last 7 days for baseline
+                    seven_days_ago = datetime.now() - timedelta(days=7)
+                    baseline_stmt = (
+                        select(Signal)
+                        .where(Signal.title.contains("SITREP"))
+                        .where(Signal.date >= seven_days_ago)
+                        .order_by(desc(Signal.date))
+                        .limit(50)
+                    )
+                    baseline_res = await session.execute(baseline_stmt)
+                    baseline_sitreps = baseline_res.scalars().all()
+
+                baseline_context = "\n\n".join(
+                    [
+                        f"--- SITREP {s.date} ---\n{s.content[:500]}"
+                        for s in baseline_sitreps
+                    ]
+                )
+
+                agent = TacticalAgent()
+                sitrep_text = await agent.generate_full_sitrep(
                     previous_sitrep=prev_sitrep
                 )
+
+                # --- ANOMALY DETECTION ---
+                intel = IntelligenceAgent()
+                with console.status(
+                    "[bold magenta]Tactical Sentinel is analyzing for anomalies...[/bold magenta]"
+                ):
+                    anomalies = await intel.detect_anomalies(
+                        sitrep_text, baseline_context
+                    )
+
+                async with async_session() as session:
+                    for anomaly in anomalies:
+                        severity = anomaly["severity"]
+                        domain = anomaly["domain"]
+                        msg = anomaly["message"]
+
+                        # Log to DB
+                        new_alert = TacticalAlert(
+                            domain=domain, severity=severity, message=msg
+                        )
+                        session.add(new_alert)
+
+                        # High-Priority Alerts
+                        if severity in ["WARNING", "CRITICAL"]:
+                            console.print(
+                                f"[bold red]TACTICAL ALERT [{domain}]:[/bold red] {msg}"
+                            )
+                            if voice:
+                                alert_text = f"Captain, tactical anomaly detected in {domain} domain. {msg}"
+                                subprocess.run(
+                                    [
+                                        "/home/chuck/bin/python3",
+                                        "/home/chuck/Scripts/generate_voice.py",
+                                        "--temp",
+                                        alert_text,
+                                    ]
+                                )
+                        else:
+                            console.print(
+                                f"[bold yellow]Tactical Note [{domain}]:[/bold yellow] {msg}"
+                            )
+
+                    await session.commit()
+                # -------------------------
+
                 await run_ingest(sitrep_text, voice)
 
         finally:
@@ -555,7 +665,11 @@ def live(refresh: int = 2):
         )
         layout["body"].split_row(Layout(name="left"), Layout(name="right"))
         layout["left"].split_column(Layout(name="adsb"), Layout(name="sector"))
-        layout["right"].split_column(Layout(name="aprs"), Layout(name="news"))
+        layout["right"].split_column(
+            Layout(name="aprs", ratio=1),
+            Layout(name="news", ratio=1),
+            Layout(name="alerts", ratio=1),
+        )
         with Live(layout, screen=True, refresh_per_second=1):
             while True:
                 # Fetch data concurrently
@@ -566,9 +680,20 @@ def live(refresh: int = 2):
                     news_wire.get_headlines(),
                 )
 
+                # Fetch recent Tactical Alerts from DB
+                alerts = []
+                async with async_session() as session:
+                    alert_stmt = (
+                        select(TacticalAlert)
+                        .order_by(desc(TacticalAlert.created_at))
+                        .limit(5)
+                    )
+                    alert_res = await session.execute(alert_stmt)
+                    alerts = alert_res.scalars().all()
+
                 layout["header"].update(
                     Panel(
-                        f"[bold yellow]📡 RADAR HUD[/bold yellow] | {datetime.now().strftime('%H:%M:%S')}",
+                        f"[bold yellow]📡 RADAR TACTICAL HUD[/bold yellow] | {datetime.now().strftime('%H:%M:%S')}",
                         style="white on blue",
                     )
                 )
@@ -599,6 +724,19 @@ def live(refresh: int = 2):
                 for h in headlines.split("\n")[:8]:
                     news_table.add_row(f"[dim]![/dim] {h.replace('- ', '')[:55]}")
                 layout["news"].update(Panel(news_table, title="News Wire"))
+
+                # Alerts Table
+                alert_table = Table(show_header=False, box=None, expand=True)
+                for a in alerts:
+                    style = (
+                        "red"
+                        if a.severity == "CRITICAL"
+                        else "yellow"
+                        if a.severity == "WARNING"
+                        else "white"
+                    )
+                    alert_table.add_row(f"[{style}]{a.domain}: {a.message}[/{style}]")
+                layout["alerts"].update(Panel(alert_table, title="Tactical Alerts"))
 
                 await asyncio.sleep(refresh)
 
@@ -643,6 +781,20 @@ def brief(voice: bool = True):
                 )
                 sitreps = (await session.execute(sitrep_stmt)).scalars().all()
 
+                # 2.5 Fetch Latest Dynamic Web Scrapes (Flock, Broadcastify)
+                dynamic_stmt = (
+                    select(Signal)
+                    .where(
+                        Signal.title.contains("Dynamic Web Extraction")
+                        | Signal.title.contains("DeFlock")
+                    )
+                    .order_by(desc(Signal.date))
+                    .limit(
+                        10
+                    )  # Grab enough to get Flock and the top Broadcastify counties
+                )
+                dynamic_scrapes = (await session.execute(dynamic_stmt)).scalars().all()
+
                 # 3. Fetch Recent Trends
                 trend_stmt = select(Trend).order_by(desc(Trend.id)).limit(10)
                 trends = (await session.execute(trend_stmt)).scalars().all()
@@ -650,12 +802,19 @@ def brief(voice: bool = True):
                 # 4. Fetch Global Headlines
                 news_headlines = await news_wire.get_headlines()
 
+                tactical_context = "\n\n".join(
+                    [f"--- {s.title} ---\n{s.content[:1000]}" for s in sitreps]
+                    + [f"--- {s.title} ---\n{s.content[:800]}" for s in dynamic_scrapes]
+                )
+
                 context = {
-                    "signals": [s.title for s in signals if "SITREP" not in s.title],
+                    "signals": [
+                        s.title
+                        for s in signals
+                        if "SITREP" not in s.title and "Dynamic" not in s.title
+                    ],
                     "trends": [t.name for t in trends],
-                    "tactical": "\n\n".join(
-                        [f"--- {s.title} ---\n{s.content[:1000]}" for s in sitreps]
-                    ),
+                    "tactical": tactical_context,
                     "news": news_headlines,
                 }
 

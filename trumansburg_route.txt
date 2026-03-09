@@ -1,0 +1,118 @@
+Resolved origin 'home' to: 1539 Button Hill Road, Tioga, PA 16946
+╭──────────────────────────────────── Roam ────────────────────────────────────╮
+│ Routing from home to Trumansburg, NY via drive...                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Distance: 56.39 miles
+Duration: 1h 11m
+
+Route Forecast: Departing at 2026-03-09 07:43 PM (America/New_York)
+ Location / Time (Local)  Forecast Temp  Condition  Precip % 
+ Start                    52.7°F         Clear      0%       
+ 07:43 PM EDT                                                
+ En Route (+3m)           52.2°F         Clear      0%       
+ 07:47 PM EDT                                                
+ En Route (+1h 4m)        53.2°F         Clear      0%       
+ 08:48 PM EDT                                                
+
+Highlights Along Route:
+  Searching for 'gas'...
+                             Gas Stops (Trip Order)                             
+┏━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━━━━━━┓
+┃ Trip Mile ┃ Detour   ┃ Name            ┃ Rating    ┃ Price ┃ Address         ┃
+┡━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━━━━━━┩
+│ 0.0 mi    │ +3.4 mi  │ Kwik Fill       │ 3.7 (156) │ $3.80 │ 12 PA-328,      │
+│           │          │                 │           │       │ Tioga, PA       │
+│           │          │                 │           │       │ 16946, USA      │
+│ 0.0 mi    │ +4.4 mi  │ Kwik Fill       │ 3.2 (11)  │ $3.50 │ 1 N Main St,    │
+│           │          │                 │           │       │ Tioga, PA       │
+│           │          │                 │           │       │ 16946, USA      │
+│ 0.0 mi    │ +6.3 mi  │ Exxon           │ 4 (400)   │ $3.60 │ Rt 15 &, State  │
+│           │          │                 │           │       │ Rte 49,         │
+│           │          │                 │           │       │ Lawrenceville,  │
+│           │          │                 │           │       │ PA 16929, USA   │
+│ 0.0 mi    │ +6.3 mi  │ Kwik Fill       │ 4.1 (37)  │ $3.50 │ 21 County Rd    │
+│           │          │                 │           │       │ 115, Lindley,   │
+│           │          │                 │           │       │ NY 14858, USA   │
+│ 0.8 mi    │ +8.5 mi  │ Sheetz          │ 2.9 (227) │ $3.50 │ 85 W Wellsboro  │
+│           │          │                 │           │       │ St, Mansfield,  │
+│           │          │                 │           │       │ PA 16933, USA   │
+│ 0.8 mi    │ +8.4 mi  │ Sunoco          │ 3.8 (13)  │ $3.53 │ 33 W Wellsboro  │
+│           │          │                 │           │       │ St, Mansfield,  │
+│           │          │                 │           │       │ PA 16933, USA   │
+│ 6.1 mi    │ +12.5 mi │ B & S           │ 4.9 (14)  │ $3.50 │ 2811 Sylvania   │
+│           │          │ Convenience     │           │       │ Rd, Troy, PA    │
+│           │          │                 │           │       │ 16947, USA      │
+│ 10.0 mi   │ +0.3 mi  │ Citgo           │ 4.2 (23)  │ $3.60 │ 7320 PA-328,    │
+│           │          │                 │           │       │ Millerton, PA   │
+│           │          │                 │           │       │ 16936, USA      │
+│ 10.0 mi   │ +6.5 mi  │ Woody's Country │ 4.6 (178) │ -     │ 32933 PA-14,    │
+│           │          │ Store           │           │       │ Gillett, PA     │
+│           │          │                 │           │       │ 16925, USA      │
+│ 12.7 mi   │ +13.0 mi │ Fastrac         │ 2.7 (58)  │ $3.40 │ 361 W Pulteney  │
+│           │          │                 │           │       │ St, Corning, NY │
+│           │          │                 │           │       │ 14830, USA      │
+│ 12.7 mi   │ +11.5 mi │ Byrne Dairy     │ 4.4 (66)  │ $3.40 │ 80 Denison Pkwy │
+│           │          │                 │           │       │ E, Corning, NY  │
+│           │          │                 │           │       │ 14830, USA      │
+│ 15.1 mi   │ +2.6 mi  │ Smiley's        │ 4.5 (8)   │ -     │ 1857 W Water    │
+│           │          │ Quickstop       │           │       │ St, Elmira, NY  │
+│           │          │                 │           │       │ 14905, USA      │
+│ 15.1 mi   │ +2.6 mi  │ Uncle Jacks     │ 3.9 (74)  │ $3.34 │ 1857 W Water    │
+│           │          │                 │           │       │ St, Elmira, NY  │
+│           │          │                 │           │       │ 14905, USA      │
+│ 16.6 mi   │ +0.1 mi  │ Aces & Eights   │ 4.4 (116) │ $3.50 │ 1156 Broadway   │
+│           │          │ General Store   │           │       │ St, Elmira, NY  │
+│           │          │                 │           │       │ 14904, USA      │
+│ 18.5 mi   │ +0.2 mi  │ Sunoco          │ 3.3 (7)   │ $3.40 │ 625             │
+│           │          │                 │           │       │ Pennsylvania    │
+│           │          │                 │           │       │ Ave, Elmira, NY │
+│           │          │                 │           │       │ 14904, USA      │
+│ 18.5 mi   │ +0.3 mi  │ Byrne Dairy and │ 4.4 (79)  │ $3.45 │ 528             │
+│           │          │ Deli            │           │       │ Pennsylvania    │
+│           │          │                 │           │       │ Ave, Elmira, NY │
+│           │          │                 │           │       │ 14904, USA      │
+│ 19.2 mi   │ +0.2 mi  │ On the Way      │ 4.8 (26)  │ -     │ 102 S Main St,  │
+│           │          │                 │           │       │ Elmira, NY      │
+│           │          │                 │           │       │ 14904, USA      │
+│ 19.7 mi   │ +0.2 mi  │ Sunoco          │ 4 (32)    │ $3.50 │ 359 N Main St,  │
+│           │          │                 │           │       │ Elmira, NY      │
+│           │          │                 │           │       │ 14901, USA      │
+│ 20.1 mi   │ +0.2 mi  │ Kwik Fill       │ 4.3 (165) │ $3.50 │ 155 Madison     │
+│           │          │                 │           │       │ Ave, Elmira, NY │
+│           │          │                 │           │       │ 14901, USA      │
+│ 20.6 mi   │ +0.0 mi  │ Sunoco          │ 2.9 (18)  │ $3.40 │ 908 E Church    │
+│           │          │                 │           │       │ St, Elmira, NY  │
+│           │          │                 │           │       │ 14902, USA      │
+│ 24.2 mi   │ +0.8 mi  │ Byrne Dairy &   │ 4.1 (106) │ $3.40 │ 1968 Grand      │
+│           │          │ Deli            │           │       │ Central Ave,    │
+│           │          │                 │           │       │ Horseheads, NY  │
+│           │          │                 │           │       │ 14845, USA      │
+│ 24.8 mi   │ +1.5 mi  │ Byrne Dairy and │ 4.3 (75)  │ $3.40 │ 2529 Corning    │
+│           │          │ Deli            │           │       │ Rd, Elmira, NY  │
+│           │          │                 │           │       │ 14903, USA      │
+│ 25.8 mi   │ +0.7 mi  │ Speedway        │ 4.2 (31)  │ $3.50 │ 606 S Main St,  │
+│           │          │                 │           │       │ Horseheads, NY  │
+│           │          │                 │           │       │ 14845, USA      │
+│ 26.1 mi   │ +0.8 mi  │ Kwik Fill       │ 4.5 (138) │ $3.50 │ 119 N Main St,  │
+│           │          │                 │           │       │ Horseheads, NY  │
+│           │          │                 │           │       │ 14845, USA      │
+│ 26.9 mi   │ +1.7 mi  │ Sunoco          │ 4.7 (15)  │ $3.40 │ 104 Wygant Rd,  │
+│           │          │                 │           │       │ Horseheads, NY  │
+│           │          │                 │           │       │ 14845, USA      │
+│ 27.6 mi   │ +0.0 mi  │ Byrne Dairy and │ 3.5 (48)  │ $3.20 │ 482 Old Ithaca  │
+│           │          │ Deli            │           │       │ Rd, Horseheads, │
+│           │          │                 │           │       │ NY 14845, USA   │
+│ 36.6 mi   │ +0.0 mi  │ Citgo           │ 4.2 (6)   │ $3.40 │ 6034 NY-13,     │
+│           │          │                 │           │       │ Cayuta, NY      │
+│           │          │                 │           │       │ 14824, USA      │
+│ 50.6 mi   │ +3.7 mi  │ Citgo           │ 4.1 (42)  │ $3.40 │ 2102            │
+│           │          │                 │           │       │ Mecklenburg Rd, │
+│           │          │                 │           │       │ Ithaca, NY      │
+│           │          │                 │           │       │ 14850, USA      │
+│ 56.3 mi   │ +0.9 mi  │ Byrne Dairy and │ 4 (162)   │ $3.40 │ 208 E Main St,  │
+│           │          │ Deli            │           │       │ Trumansburg, NY │
+│           │          │                 │           │       │ 14886, USA      │
+│ 56.3 mi   │ +1.3 mi  │ Sunoco          │ 3.9 (8)   │ $3.40 │ 2085 NY-96,     │
+│           │          │                 │           │       │ Trumansburg, NY │
+│           │          │                 │           │       │ 14886, USA      │
+└───────────┴──────────┴─────────────────┴───────────┴───────┴─────────────────┘
