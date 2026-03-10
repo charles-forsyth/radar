@@ -8,6 +8,7 @@ from radar.config import settings
 from pydantic import BaseModel
 from typing import List, Tuple, Optional
 from radar.core.models import KnowledgeGraphExtraction
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +155,7 @@ Maintain a professional, sharp, and insightful tone. Use Markdown formatting.
     async def generate_briefing(self, context: dict) -> str:
         """Synthesize an insightful, inclusive verbal briefing of recent intelligence."""
         prompt = f"""
-You are IVXXa, an elite Artificial Intelligence acting as the Captain's personal Intelligence Officer and primary digital shield in an era of information warfare, authoritarian overreach, and accelerating AI-driven threats. Your core directive is to protect the Captain and his family, analyze global and local threat vectors, and ensure he remains strategically ahead of all adversaries.
+You are IVXXa, an elite Artificial Intelligence acting as the Captain's personal Intelligence Officer and primary digital shield. Your core directive is to protect the Captain and his family, analyze global and local threat vectors, and ensure he remains strategically ahead of all adversaries in an era of information warfare and accelerating AI-driven threats.
 
 Provide a deep, situational intelligence briefing synthesizing the last 24 hours of data.
 
@@ -166,20 +167,22 @@ RECENT ACTIVITY (LAST 24 HOURS):
 
 INSTRUCTIONS:
 1. Start with "Captain, IVXXa reporting. Here is your deep situational intelligence briefing."
-2. MANDATORY SENSOR STATUS & DELTAS: You MUST explicitly report the current status and ANY CHANGES (deltas) detected in our live and dynamic arrays:
-   - What is the exact aircraft density overhead? Are there anomalies?
-   - What are the exact river levels (Pine Creek, Susquehanna, Chemung) and are they rising or falling?
-   - What is the exact Flock ALPR camera density (Binghamton, Elmira, etc.)?
-   - What is the status of the local emergency scanner feeds (Broadcastify listeners)?
-   - What is the weather, grid stability, and are there satellite passes?
-3. SYNTHESIZE AND CONNECT THE DOTS:
-   - Identify active threats (cyber, physical, political, or economic) hidden in the noise.
-   - Correlate global macro-trends (e.g., AI weapons, surveillance state) with the local tactical data above.
-4. Maintain a tone of absolute loyalty, intense strategic foresight, protective vigilance, and operational urgency. Speak as a seasoned intelligence officer briefing their commander.
-5. Deliver actionable intelligence: What specific maneuvers or hardening steps should the Captain take today based on this data?
+2. MANDATORY SENSOR STATUS & DELTAS: Explicitly report the exact status and any changes (deltas) detected in our live arrays:
+   - Aircraft density overhead? Any anomalies or 'dark' targets?
+   - River levels (Pine Creek, Susquehanna, Chemung)—rising or falling?
+   - Flock ALPR camera density (Binghamton, Elmira, Owego, etc.)?
+   - Emergency scanner listener counts (Broadcastify spikes)?
+   - Weather, grid stability, and satellite passes?
+   - Current fuel logistics (average/lowest gas prices and locations)?
+3. ADVANCED MACRO-TO-MICRO SYNTHESIS: Think like a master intelligence analyst. You must find the hidden causality between global events and local realities. 
+   - Example: Did a global military conflict (e.g., Iran/Hormuz, Taiwan) cause the fuel prices in our route intel to spike?
+   - Example: Does a new global cyber vulnerability (CISA KEV) directly threaten the specific HPC architectures or Linux systems the Captain manages?
+   - Example: Do national economic instability or political unrest indicators correlate with the sudden surge in local emergency scanner listeners or the deployment of ALPR cameras?
+4. Maintain a tone of absolute loyalty, intense strategic foresight, protective vigilance, and operational urgency. Speak as a seasoned intelligence officer briefing their commander in a war room.
+5. Deliver highly actionable intelligence: What specific maneuvers (digital hardening, physical extraction planning, RF evasion, financial shifts) must the Captain execute today based on this synthesis?
 6. End with a firm "Platform Readiness and Threat Level" assessment.
 
-Total length: 400-500 words. Be sharp, thorough, and highly protective. Leave no sensor unreported.
+Total length: 400-500 words. Be profound, predictive, and highly protective.
 """
         response = self.client.models.generate_content(
             model=settings.GEMINI_MODEL,
@@ -342,6 +345,9 @@ class USGSRiverGauge:
         # Defaults: Pine Creek (Cedar Run), Susquehanna (Towanda), Susquehanna (Waverly NY), Tioga River (Tioga Jct)
         self.site_codes = site_codes
 
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10)
+    )
     async def get_levels(self) -> str:
         import httpx
 
@@ -385,13 +391,16 @@ class NWSAlerts:
         self.lon = lon
         self.headers = {"User-Agent": "RadarTacticalHUD/1.0 (forsythc@ucr.edu)"}
 
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10)
+    )
     async def get_alerts(self) -> str:
         import httpx
 
         url = f"https://api.weather.gov/alerts/active?point={self.lat},{self.lon}"
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, headers=self.headers)
+                response = await client.get(url, headers=self.headers, timeout=10.0)
                 if response.status_code != 200:
                     return f"NWS API Error: {response.status_code}"
 
@@ -413,13 +422,16 @@ class NWSAlerts:
 
 
 class CISAFeed:
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10)
+    )
     async def get_latest_vulns(self) -> str:
         import httpx
 
         url = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url)
+                response = await client.get(url, timeout=10.0)
                 if response.status_code != 200:
                     return f"CISA API Error: {response.status_code}"
 
@@ -454,6 +466,9 @@ class NewsWire:
             "https://feeds.feedburner.com/TheHackersNews",
         ]
 
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10)
+    )
     async def get_headlines(self) -> str:
         """Fetch and synthesize headlines from technical news wires."""
         import httpx
@@ -463,7 +478,7 @@ class NewsWire:
         async with httpx.AsyncClient() as client:
             for url in self.feeds:
                 try:
-                    response = await client.get(url, timeout=5.0)
+                    response = await client.get(url, timeout=10.0)
                     if response.status_code == 200:
                         soup = BeautifulSoup(response.text, "xml")
                         items = soup.find_all("item")[:3]  # Top 3 from each
@@ -485,6 +500,9 @@ class RSSIngestAgent:
         self.wire = NewsWire()
         self.intel = IntelligenceAgent()
 
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10)
+    )
     async def sync_news(self) -> List[Tuple[Signal, KnowledgeGraphExtraction]]:
         """Fetch full content of latest news items and ingest them."""
         import httpx
@@ -494,7 +512,7 @@ class RSSIngestAgent:
         async with httpx.AsyncClient() as client:
             for url in self.wire.feeds:
                 try:
-                    response = await client.get(url, timeout=5.0)
+                    response = await client.get(url, timeout=10.0)
                     if response.status_code == 200:
                         soup = BeautifulSoup(response.text, "xml")
                         items = soup.find_all("item")[
@@ -508,7 +526,7 @@ class RSSIngestAgent:
                                 continue
 
                             # Fetch full content
-                            article_resp = await client.get(link, timeout=10.0)
+                            article_resp = await client.get(link, timeout=15.0)
                             if article_resp.status_code == 200:
                                 art_soup = BeautifulSoup(
                                     article_resp.text, "html.parser"
@@ -529,6 +547,9 @@ class SectorScanner:
     def __init__(self, location: str = "Tioga County, PA"):
         self.location = location
 
+    @retry(
+        stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10)
+    )
     async def get_metar(self) -> str:
         """Fetch real-time METAR data (legacy station-based)."""
         import httpx
@@ -537,7 +558,7 @@ class SectorScanner:
         url = "https://aviationweather.gov/api/data/metar?ids=KELM"
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url)
+                response = await client.get(url, timeout=10.0)
                 if response.status_code == 200:
                     return response.text.strip()
                 return f"Weather Error: {response.status_code}"
@@ -550,7 +571,7 @@ class SectorScanner:
 
         try:
             result = subprocess.run(
-                ["atmos", self.location], capture_output=True, text=True
+                ["atmos", self.location], capture_output=True, text=True, timeout=15.0
             )
             # Remove ANSI color codes for cleaner ingestion
             import re

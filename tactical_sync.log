@@ -1,0 +1,28 @@
+Executing Tactical SITREP Ingest...
+TACTICAL ALERT [WEATHER]: A system error has occurred in the atmospheric sensor 
+array, resulting in a complete loss of current aviation weather telemetry for 
+the sector.
+TACTICAL ALERT [AIR]: Persistent ADS-B data integrity issues detected, including
+target 0c6061 reporting a physically impossible 0 kt ground speed at an altitude
+of 27,075 feet.
+TACTICAL ALERT [CYBER]: Three critical vulnerabilities, including an Ivanti 
+authentication bypass and SolarWinds deserialization flaw, were added to the 
+CISA KEV catalog on 2026-03-09.
+Ingested: Title: Master Tactical SITREP - 2026-03-09 20:30:06
+Executing Tactical SITREP Ingest...
+TACTICAL ALERT [WEATHER]: Total failure of National Weather Service and 
+Atmospheric sensor data feeds detected in the Tioga County Sector.
+TACTICAL ALERT [RF]: Increase in ADS-B ghost targets and an APRS sensor 
+connection reset suggest active signal interference or sensor processing errors.
+TACTICAL ALERT [CYBER]: Three critical vulnerabilities including Ivanti Endpoint
+Manager and SolarWinds Web Help Desk were added to the CISA KEV on 2026-03-09.
+Ingested: Title: Master Tactical SITREP - 2026-03-09 21:00:06
+Traceback (most recent call last):
+  File "/home/chuck/Projects/radar/.venv/bin/radar", line 4, in <module>
+    from radar.main import app
+  File "/home/chuck/Projects/radar/src/radar/main.py", line 10, in <module>
+    from radar.core.ingest import (
+  File "/home/chuck/Projects/radar/src/radar/core/ingest.py", line 491
+    def __init__(self):
+    ^
+IndentationError: expected an indented block after class definition on line 490

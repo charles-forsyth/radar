@@ -800,17 +800,18 @@ def brief(voice: bool = True):
                 )
                 sitreps = (await session.execute(sitrep_stmt)).scalars().all()
 
-                # 2.5 Fetch Latest Dynamic Web Scrapes (Flock, Broadcastify)
+                # 2.5 Fetch Latest Dynamic Web Scrapes (Flock, Broadcastify, and Roam Routes)
                 dynamic_stmt = (
                     select(Signal)
                     .where(
                         Signal.title.contains("Dynamic Web Extraction")
                         | Signal.title.contains("DeFlock")
+                        | Signal.title.contains("Route Intel")
                     )
                     .order_by(desc(Signal.date))
                     .limit(
-                        10
-                    )  # Grab enough to get Flock and the top Broadcastify counties
+                        15
+                    )  # Grab enough to get Flock, Broadcastify, and Roam routes
                 )
                 dynamic_scrapes = (await session.execute(dynamic_stmt)).scalars().all()
 
