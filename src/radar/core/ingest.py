@@ -571,7 +571,10 @@ class SectorScanner:
 
         try:
             result = subprocess.run(
-                ["atmos", self.location], capture_output=True, text=True, timeout=15.0
+                ["/home/chuck/.local/bin/atmos", self.location],
+                capture_output=True,
+                text=True,
+                timeout=15.0,
             )
             # Remove ANSI color codes for cleaner ingestion
             import re
@@ -599,26 +602,45 @@ class GridScanner:
         self.browser = BrowserIngestAgent()
         self.penelec_url = "https://outages.firstenergycorp.com/pa.html"
         self.tri_county_url = "https://outagemap.tri-countyrec.com/"
+        self.nyseg_url = "https://outagemap.nyseg.com/"
+        self.ppl_url = "https://omap.pplweb.com/OMAP"
 
     async def get_summary(self) -> str:
-        """Fetch real-time grid status from utility maps."""
+        """Fetch real-time grid status from utility maps across the PA/NY sector."""
         import asyncio
 
         # Use simple browser extracts for speed
         penelec_task = self.browser.extract(
             self.penelec_url,
-            "Extract the total number of customers without power in Tioga County from the Penelec outage table or summary.",
+            "Extract the total number of customers without power in Tioga and Bradford counties from the Penelec outage summary.",
         )
 
-        # Tri-County map is more interactive, just checking general status for now
         tri_county_task = self.browser.extract(
             self.tri_county_url,
             "Identify if there are any active power outages on the map for the Tioga County region. Return a simple status summary.",
         )
 
-        results = await asyncio.gather(penelec_task, tri_county_task)
+        nyseg_task = self.browser.extract(
+            self.nyseg_url,
+            "Identify the number of power outages or customers affected in Broome and Chemung counties (New York). Return a simple summary.",
+        )
 
-        return f"- **Penelec:** {results[0]}\n- **Tri-County REC:** {results[1]}"
+        ppl_task = self.browser.extract(
+            self.ppl_url,
+            "Identify the number of power outages or customers affected in Lackawanna, Dauphin, and Monroe counties (Pennsylvania). Return a simple summary.",
+        )
+
+        # Run them concurrently to keep sync times low
+        results = await asyncio.gather(
+            penelec_task, tri_county_task, nyseg_task, ppl_task
+        )
+
+        return (
+            f"- **Penelec (PA):** {results[0]}\n"
+            f"- **Tri-County REC (PA):** {results[1]}\n"
+            f"- **NYSEG (NY):** {results[2]}\n"
+            f"- **PPL (PA):** {results[3]}"
+        )
 
 
 class SatelliteScanner:
