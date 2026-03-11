@@ -194,26 +194,56 @@ class DeepResearchAgent:
         if not urls_to_scrape:
             urls_to_scrape = self.sources
 
-        # 2. Fetch the content of the discovered URLs using our fast C fetcher
+        # 2. Fetch the content of the discovered URLs
         topic_words = [w.lower() for w in topic.split() if len(w) > 3]
 
-        for url in urls_to_scrape:
-            try:
-                content = self.intel._fetch_url(url)
-                content_lower = content.lower()
+        from playwright.async_api import async_playwright
+        
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                # Create a context that masks our automated nature
+                context = await browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    viewport={"width": 1920, "height": 1080},
+                    java_script_enabled=True,
+                )
+                page = await context.new_page()
+                
+                for url in urls_to_scrape:
+                    try:
+                        # Skip PDFs for Playwright as it will just download them; use our existing C fetcher for PDFs
+                        if url.lower().endswith(".pdf"):
+                            content = self.intel._fetch_url(url)
+                        else:
+                            await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                            
+                            # Give modern JS frameworks a second to paint their DOM
+                            import asyncio
+                            await asyncio.sleep(2)
+                            
+                            # Extract visible text directly using Playwright's evaluator to skip HTML tags entirely
+                            content = await page.evaluate("() => document.body.innerText")
 
-                # Verify relevance before appending
-                hit = False
-                for word in topic_words:
-                    if word in content_lower:
-                        hit = True
-                        break
+                        content_lower = content.lower()
 
-                if hit or not topic_words:
-                    # Truncate content to avoid overwhelming the C summarizer buffer
-                    combined_text += f"\n--- Source: {url} ---\n{content[:4000]}"
-            except Exception as e:
-                logger.error(f"Failed to fetch {url}: {e}")
+                        # Verify relevance before appending
+                        hit = False
+                        for word in topic_words:
+                            if word in content_lower:
+                                hit = True
+                                break
+
+                        if hit or not topic_words:
+                            # Truncate content to avoid overwhelming the C summarizer buffer
+                            combined_text += f"\n--- Source: {url} ---\n{content[:4000]}"
+                    except Exception as e:
+                        logger.error(f"Failed to fetch {url} with Playwright: {e}")
+                
+                await browser.close()
+        except Exception as browser_err:
+            logger.error(f"Playwright initialization failed: {browser_err}")
+            return f"Local research failed to initialize browser for: {topic}"
 
         if not combined_text:
             return f"Local research found no direct hits on {topic} in monitored high-value domains."
