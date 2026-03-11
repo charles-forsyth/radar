@@ -725,9 +725,11 @@ class BrowserIngestAgent:
         self.intel = IntelligenceAgent()
 
     async def extract(self, url: str, instructions: str) -> str:
-        """Fetch dynamic JS content using local Playwright and summarize."""
+        """Fetch dynamic JS content using local Playwright and summarize. Fallback to OCR if requested."""
         from playwright.async_api import async_playwright
         import asyncio
+        import os
+        import tempfile
 
         content = ""
         try:
@@ -743,11 +745,30 @@ class BrowserIngestAgent:
                 logger.info(f"Playwright navigating to dynamic target: {url}")
                 await page.goto(url, wait_until="networkidle", timeout=20000)
                 
-                # Give complex SPA frameworks (like DeFlock maps) time to render API data
+                # Give complex SPA frameworks time to render API data
                 await asyncio.sleep(4)
                 
                 # Extract visible text directly using Playwright
                 content = await page.evaluate("() => document.body.innerText")
+                
+                # If content is suspiciously short or instructions mention "map", take a screenshot and OCR it
+                if len(content) < 1000 or "map" in url.lower() or "ocr" in instructions.lower():
+                    logger.info(f"Triggering local OCR for {url}")
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                        screenshot_path = tmp.name
+                    
+                    await page.screenshot(path=screenshot_path, full_page=True)
+                    
+                    try:
+                        import pytesseract
+                        from PIL import Image
+                        ocr_text = pytesseract.image_to_string(Image.open(screenshot_path))
+                        content += f"\n--- OCR EXTRACTION ---\n{ocr_text}"
+                    except Exception as ocr_err:
+                        logger.error(f"Local OCR failed: {ocr_err}")
+                    finally:
+                        if os.path.exists(screenshot_path):
+                            os.remove(screenshot_path)
                 
                 await browser.close()
         except Exception as e:
@@ -757,7 +778,7 @@ class BrowserIngestAgent:
 
         return self.intel._run_tool(
             self.intel.summarize_bin,
-            f"Question: {instructions}\nTarget: {url}\n\n{content[:8000]}",
+            f"Question: {instructions}\nTarget: {url}\n\n{content[:15000]}",
         )
 
 
