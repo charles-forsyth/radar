@@ -33,10 +33,36 @@ class IntelligenceAgent:
 
     def _fetch_url(self, url: str) -> str:
         try:
-            # We don't use text=True here because we want to handle decoding safely
+            # Check if it's a PDF
+            is_pdf = url.lower().endswith(".pdf")
+            
+            # Run fetch tool
             result = subprocess.run(
                 [self.fetch_bin, url], capture_output=True, check=True
             )
+            
+            if is_pdf:
+                # Save binary to temp file and run pdftotext
+                import tempfile
+                import os
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    tmp.write(result.stdout)
+                    tmp_path = tmp.name
+                
+                try:
+                    # pdftotext -layout <file> -
+                    pdf_result = subprocess.run(
+                        ["pdftotext", "-layout", tmp_path, "-"],
+                        capture_output=True, text=True, check=True
+                    )
+                    return pdf_result.stdout.strip()
+                except Exception as pdf_e:
+                    logger.error(f"PDF extraction failed for {url}: {pdf_e}")
+                    return ""
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+            
             return result.stdout.decode('utf-8', errors='ignore').strip()
         except subprocess.CalledProcessError as e:
             logger.error(f"Error fetching {url}: {e.stderr.decode('utf-8', errors='ignore')}")
