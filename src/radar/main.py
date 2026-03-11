@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
-from google.cloud.sql.connector import Connector
 
 from radar.core.ingest import (
     BrowserIngestAgent,
@@ -17,8 +16,7 @@ from radar.core.ingest import (
     TacticalAgent,
     RSSIngestAgent,
 )
-from radar.config import settings
-from radar.db.engine import set_global_connector, async_session
+from radar.db.engine import async_session
 from radar.db.init import init_db
 from radar.db.models import (
     Entity,
@@ -46,12 +44,6 @@ async def do_ask_logic(
     import json
 
     intel = IntelligenceAgent()
-    connector = None
-    if settings.INSTANCE_CONNECTION_NAME:
-        loop = asyncio.get_running_loop()
-        connector = Connector(loop=loop)
-        set_global_connector(connector)
-        await connector.__aenter__()
 
     try:
         active_session_id = None
@@ -83,13 +75,37 @@ async def do_ask_logic(
 
             question_vector = await intel.get_embedding(current_question)
             async with async_session() as session:
-                stmt = (
+                # Hybrid Search: Keyword + Vector
+                keywords = [k.lower() for k in current_question.split() if len(k) > 3]
+
+                # 1. Vector Search
+                vector_stmt = (
                     select(Signal)
                     .order_by(Signal.vector.l2_distance(question_vector))  # type: ignore
                     .limit(5)
                 )
-                relevant_signals_seq = (await session.execute(stmt)).scalars().all()
+                relevant_signals_seq = (
+                    (await session.execute(vector_stmt)).scalars().all()
+                )
                 relevant_signals = list(relevant_signals_seq)
+
+                # 2. Keyword Fallback/Augmentation
+                if keywords:
+                    kw_cond = [Signal.content.ilike(f"%{kw}%") for kw in keywords]  # type: ignore
+                    from sqlalchemy import or_
+
+                    kw_stmt = select(Signal).where(or_(*kw_cond)).limit(3)
+                    kw_results = (await session.execute(kw_stmt)).scalars().all()
+                    for s in reversed(kw_results):  # Add to beginning
+                        if s.id not in [rs.id for rs in relevant_signals]:
+                            relevant_signals.insert(0, s)
+                        else:
+                            # If already in vector search, move it to the top
+                            relevant_signals.remove(
+                                next(rs for rs in relevant_signals if rs.id == s.id)
+                            )
+                            relevant_signals.insert(0, s)
+
                 history = []
                 if active_session_id:
                     hist_stmt = (
@@ -162,8 +178,7 @@ async def do_ask_logic(
                 break
             current_question = ""
     finally:
-        if connector:
-            await connector.__aexit__(None, None, None)
+        pass
 
 
 @app.command()
@@ -212,14 +227,6 @@ def sync(
 
     async def do_sync():
         import os
-
-        # Connect to DB
-        connector = None
-        if settings.INSTANCE_CONNECTION_NAME:
-            loop = asyncio.get_running_loop()
-            connector = Connector(loop=loop)
-            set_global_connector(connector)
-            await connector.__aenter__()
 
         try:
             if daily:
@@ -411,8 +418,7 @@ def sync(
                 await run_ingest(sitrep_text, voice)
 
         finally:
-            if connector:
-                await connector.__aexit__(None, None, None)
+            pass
 
     asyncio.run(do_sync())
 
@@ -509,12 +515,6 @@ async def run_ingest(text: str, voice: bool):
     agent = TextIngestAgent()
 
     async def _ingest():
-        connector = None
-        if settings.INSTANCE_CONNECTION_NAME:
-            loop = asyncio.get_running_loop()
-            connector = Connector(loop=loop)
-            set_global_connector(connector)
-            await connector.__aenter__()
         try:
             signal, kg = await agent.ingest(text)
             items = [f"{e.name}: {e.description}" for e in kg.entities] + [
@@ -590,8 +590,7 @@ async def run_ingest(text: str, voice: bool):
                     ]
                 )
         finally:
-            if connector:
-                await connector.__aexit__(None, None, None)
+            pass
 
     await _ingest()
 
@@ -611,7 +610,7 @@ def ingest(
         None,
         "--instructions",
         "-i",
-        help="If source is a URL, use browser-use agent to navigate and extract data based on these instructions.",
+        help="If source is a URL, navigate and extract data based on these instructions.",
     ),
 ):
     """Ingest massive textual intelligence via stdin, file, or URL."""
@@ -619,14 +618,12 @@ def ingest(
 
     if source and (source.startswith("http://") or source.startswith("https://")):
         if instructions:
-            console.print(
-                f"[bold cyan]Deploying Browser Agent to:[/bold cyan] {source}"
-            )
+            console.print(f"[bold cyan]Fetching source at:[/bold cyan] {source}")
 
             async def run_dynamic():
                 agent = BrowserIngestAgent()
                 text = await agent.extract(source, instructions)
-                final_text = f"Title: Dynamic Web Extraction - {source}\n\n{text}"
+                final_text = f"Title: Web Extraction - {source}\n\n{text}"
                 await run_ingest(final_text, voice)
 
             asyncio.run(run_dynamic())
@@ -775,14 +772,6 @@ def brief(voice: bool = True):
         intel = IntelligenceAgent()
         news_wire = NewsWire()
 
-        # Connect to DB
-        connector = None
-        if settings.INSTANCE_CONNECTION_NAME:
-            loop = asyncio.get_running_loop()
-            connector = Connector(loop=loop)
-            set_global_connector(connector)
-            await connector.__aenter__()
-
         try:
             async with async_session() as session:
                 last_24h = datetime.now() - timedelta(hours=24)
@@ -800,11 +789,11 @@ def brief(voice: bool = True):
                 )
                 sitreps = (await session.execute(sitrep_stmt)).scalars().all()
 
-                # 2.5 Fetch Latest Dynamic Web Scrapes (Flock, Broadcastify, and Roam Routes)
+                # 2.5 Fetch Latest Web Scrapes (Broadcastify, and Roam Routes)
                 dynamic_stmt = (
                     select(Signal)
                     .where(
-                        Signal.title.contains("Dynamic Web Extraction")
+                        Signal.title.contains("Web Extraction")
                         | Signal.title.contains("DeFlock")
                         | Signal.title.contains("Route Intel")
                     )
@@ -831,7 +820,7 @@ def brief(voice: bool = True):
                     "signals": [
                         s.title
                         for s in signals
-                        if "SITREP" not in s.title and "Dynamic" not in s.title
+                        if "SITREP" not in s.title and "Web Extraction" not in s.title
                     ],
                     "trends": [t.name for t in trends],
                     "tactical": tactical_context,
@@ -862,8 +851,7 @@ def brief(voice: bool = True):
                         ]
                     )
         finally:
-            if connector:
-                await connector.__aexit__(None, None, None)
+            pass
 
     asyncio.run(do_brief())
 
@@ -873,14 +861,7 @@ def init():
     """Init DB."""
 
     async def _init():
-        if settings.INSTANCE_CONNECTION_NAME:
-            loop = asyncio.get_running_loop()
-            conn = Connector(loop=loop)
-            set_global_connector(conn)
-            async with conn:
-                await init_db()
-        else:
-            await init_db()
+        await init_db()
 
     asyncio.run(_init())
     console.print("[green]RADAR READY[/green]")

@@ -38,14 +38,14 @@ async def test_merge():
                 for e in to_merge
             ]
 
-            print(f"Asking Gemini to merge: {[e.name for e in to_merge]}")
+            print(f"Asking Local Engine to merge: {[e.name for e in to_merge]}")
             optimization = await intel.optimize_knowledge(items_data)
 
             unified_name = optimization["unified_name"]
             unified_desc = optimization["unified_description"]
             merged_ids = [uuid.UUID(mid) for mid in optimization["merged_ids"]]
 
-            print(f"Gemini suggests unified name: {unified_name}")
+            print(f"Local Engine suggests unified name: {unified_name}")
 
             # Use the first one as master
             master_entity = to_merge[0]

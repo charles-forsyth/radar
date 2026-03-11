@@ -19,3 +19,8 @@ wheels/
 .vscode/
 *.swp
 *.swo
+src/radar/tools/radar_embed
+src/radar/tools/radar_extract
+src/radar/tools/radar_summarize
+src/radar/tools/radar_fetch
+test_ddg.html

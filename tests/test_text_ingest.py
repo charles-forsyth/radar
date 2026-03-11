@@ -35,7 +35,7 @@ async def test_text_ingest_agent():
 
     assert signal.title == "This is a test signal."
     assert signal.content == text
-    assert signal.source == "stdin"
+    assert signal.source == "local_nlp"
 
 
 @patch("radar.main.run_ingest", new_callable=AsyncMock)

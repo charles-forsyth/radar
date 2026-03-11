@@ -11,9 +11,9 @@ Transform Radar from a strategic research brain into a real-time tactical dashbo
 - **WebSDR & Frequency Hunter:** Automated lookup of local emergency frequencies (P25/Analog) with direct links to the nearest public WebSDR receivers.
 
 ## 🤖 Enhanced Research Agents
-- **Deep Research Access:** Transition from the Search Grounding fallback to the native Gemini Deep Research Interactions API once access is fully provisioned.
-- **Multi-Agent Swarms:** Parallelize research tasks across multiple specialized agents (e.g., one for technical architecture, one for market finance).
-- **Source Verification:** Cross-reference extracted claims across multiple independent search results to assign confidence scores.
+- **Local Web Crawler:** Build a custom Rust-based crawler that scrapes technical technical wires and search results without external AI APIs.
+- **Multi-Agent Swarms:** Parallelize research tasks across multiple specialized local agents (e.g., one for technical architecture, one for market finance).
+- **Source Verification:** Cross-reference extracted claims across multiple independent search results to assign confidence scores locally.
 
 ## 📊 Knowledge Graph & UI
 - **Temporal Analysis:** Visualize how trends and entity relationships have evolved over multiple intelligence sweeps.
@@ -21,6 +21,6 @@ Transform Radar from a strategic research brain into a real-time tactical dashbo
 - **Interactive TUI Filters:** Add keyboard navigation to the dashboard to filter signals and entities by category (e.g., just show SIGINT/RF signals).
 
 ## ⚙️ Core Infrastructure
-- **Matryoshka Embedding Tuning:** Optimize retrieval by experimenting with different dimensions (from 256 to 3072) supported by the `gemini-embedding-001` model.
-- **Semantic Deduplication:** Automatically merge highly similar signals or entities to maintain a clean knowledge graph.
-- **Offline Mode:** Implement local caching for LLM responses to enable basic querying of the graph without an active API connection.
+- **Local Hashing Embeddings:** Refine the custom C-based hashing embedding engine to support higher dimensions and better collision resistance.
+- **Semantic Deduplication:** Automatically merge highly similar signals or entities using local string-distance algorithms (Levenshtein/Jaro-Winkler).
+- **Extractive Summarization:** Enhance the local TextRank engine to handle multi-document summarization for long-term intelligence briefing.
