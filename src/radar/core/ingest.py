@@ -725,11 +725,39 @@ class BrowserIngestAgent:
         self.intel = IntelligenceAgent()
 
     async def extract(self, url: str, instructions: str) -> str:
-        """Fetch content using local C fetcher and summarize."""
-        content = self.intel._fetch_url(url)
+        """Fetch dynamic JS content using local Playwright and summarize."""
+        from playwright.async_api import async_playwright
+        import asyncio
+
+        content = ""
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    viewport={"width": 1920, "height": 1080},
+                    java_script_enabled=True,
+                )
+                page = await context.new_page()
+                
+                logger.info(f"Playwright navigating to dynamic target: {url}")
+                await page.goto(url, wait_until="networkidle", timeout=20000)
+                
+                # Give complex SPA frameworks (like DeFlock maps) time to render API data
+                await asyncio.sleep(4)
+                
+                # Extract visible text directly using Playwright
+                content = await page.evaluate("() => document.body.innerText")
+                
+                await browser.close()
+        except Exception as e:
+            logger.error(f"Playwright dynamic extraction failed for {url}: {e}")
+            # Fallback to static C fetcher if Playwright crashes
+            content = self.intel._fetch_url(url)
+
         return self.intel._run_tool(
             self.intel.summarize_bin,
-            f"Target: {url}\nGoal: {instructions}\n\n{content}",
+            f"Question: {instructions}\nTarget: {url}\n\n{content[:8000]}",
         )
 
 
