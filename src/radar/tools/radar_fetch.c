@@ -51,16 +51,32 @@ int main(int argc, char *argv[]) {
   if(res != CURLE_OK) {
     fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
   } else {
-    // Basic text extraction: strip tags
+    // Basic text extraction: strip tags and insert newlines
     int in_tag = 0;
+    int consecutive_spaces = 0;
+    
     for (size_t i = 0; i < chunk.size; i++) {
-        if (chunk.memory[i] == '<') {
+        char c = chunk.memory[i];
+        
+        if (c == '<') {
             in_tag = 1;
-        } else if (chunk.memory[i] == '>') {
+        } else if (c == '>') {
             in_tag = 0;
-            printf(" "); // Space between tag-separated text
+            // Add a newline after tag to ensure text is broken up into readable chunks
+            if (!consecutive_spaces) {
+                putchar('\n');
+                consecutive_spaces = 1;
+            }
         } else if (!in_tag) {
-            putchar(chunk.memory[i]);
+            if (c == ' ' || c == '\n' || c == '\r' || c == '\t') {
+                if (!consecutive_spaces) {
+                    putchar(' ');
+                    consecutive_spaces = 1;
+                }
+            } else {
+                putchar(c);
+                consecutive_spaces = 0;
+            }
         }
     }
     printf("\n");
