@@ -55,6 +55,7 @@ int main(int argc, char *argv[]) {
                 strstr(p, "{") == NULL && 
                 strstr(p, "}") == NULL &&
                 strstr(p, "var ") == NULL &&
+                strstr(p, "window[") == NULL &&
                 strstr(p, "font-family") == NULL &&
                 strstr(p, "LOCAL EXTRACTIVE") == NULL &&
                 strstr(p, "found no direct hits") == NULL &&
@@ -82,7 +83,7 @@ int main(int argc, char *argv[]) {
                     char lower_p[MAX_BUFFER];
                     strncpy(lower_p, p, MAX_BUFFER);
                     to_lowercase(lower_p);
-                    
+
                     int relevant = 0;
                     if (word_count > 0) {
                         for (int w = 0; w < word_count; w++) {
@@ -92,17 +93,18 @@ int main(int argc, char *argv[]) {
                             }
                         }
                     } else {
-                        relevant = 1;
+                        relevant = 1; 
                     }
-                    
-                    // We only want to print lines that are actually relevant to the query to avoid noise
-                    if (relevant) {
+
+                    // We only want to print lines that are actually relevant to the query to avoid noise.
+                    // But if it's the very first few lines of a document, they often contain the site header/title
+                    // which is good for context.
+                    if (relevant || (content_lines < 2 && line_count < 15)) {
                         if (!current_title_printed && strlen(current_title) > 0) {
                             printf("\n📌 %s\n", current_title);
                             current_title_printed = 1;
                         }
-                        
-                        // Clean up output: Truncate excessively long lines to prevent terminal spew
+
                         char display_p[512];
                         if (strlen(p) > 250) {
                             strncpy(display_p, p, 247);
@@ -110,14 +112,13 @@ int main(int argc, char *argv[]) {
                             strcat(display_p, "...");
                         } else {
                             strncpy(display_p, p, sizeof(display_p) - 1);
-                            display_p[strcspn(display_p, "\n")] = 0; // Strip newline for clean bulleting
+                            display_p[strcspn(display_p, "\n")] = 0; 
                         }
-                        
+
                         printf("  - %s\n", display_p);
                         content_lines++;
                         total_content_lines++;
-                    }
-                }
+                    }                }
             }
         }
     }

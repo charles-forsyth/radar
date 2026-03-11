@@ -42,9 +42,22 @@ int main(int argc, char *argv[]) {
   curl_easy_setopt(curl_handle, CURLOPT_URL, argv[1]);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
   curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1L);
-  curl_easy_setopt(curl_handle, CURLOPT_TIMEOUT, 10L);
+  curl_easy_setopt(curl_handle, CURLOPT_MAXREDIRS, 5L);
+  curl_easy_setopt(curl_handle, CURLOPT_TIMEOUT, 15L);
+  curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYPEER, 0L); // Bypass strict SSL for older/misconfigured target servers
+  curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYHOST, 0L);
+
+  // Check if URL ends with .pdf, skip to prevent binary data corruption
+  int len = strlen(argv[1]);
+  if (len > 4 && strcasecmp(argv[1] + len - 4, ".pdf") == 0) {
+      printf("Skipping PDF file: %s\n", argv[1]);
+      curl_easy_cleanup(curl_handle);
+      free(chunk.memory);
+      curl_global_cleanup();
+      return 0;
+  }
 
   res = curl_easy_perform(curl_handle);
 
@@ -53,21 +66,27 @@ int main(int argc, char *argv[]) {
   } else {
     // Basic text extraction: strip tags and insert newlines
     int in_tag = 0;
+    int in_script = 0;
     int consecutive_spaces = 0;
     
     for (size_t i = 0; i < chunk.size; i++) {
         char c = chunk.memory[i];
         
+        // Simple heuristic to skip <script> and <style> blocks
+        if (i < chunk.size - 7 && strncasecmp(&chunk.memory[i], "<script", 7) == 0) in_script = 1;
+        if (i < chunk.size - 6 && strncasecmp(&chunk.memory[i], "<style", 6) == 0) in_script = 1;
+        if (in_script && i > 8 && strncasecmp(&chunk.memory[i-9], "</script>", 9) == 0) in_script = 0;
+        if (in_script && i > 7 && strncasecmp(&chunk.memory[i-8], "</style>", 8) == 0) in_script = 0;
+
         if (c == '<') {
             in_tag = 1;
         } else if (c == '>') {
             in_tag = 0;
-            // Add a newline after tag to ensure text is broken up into readable chunks
             if (!consecutive_spaces) {
                 putchar('\n');
                 consecutive_spaces = 1;
             }
-        } else if (!in_tag) {
+        } else if (!in_tag && !in_script) {
             if (c == ' ' || c == '\n' || c == '\r' || c == '\t') {
                 if (!consecutive_spaces) {
                     putchar(' ');
