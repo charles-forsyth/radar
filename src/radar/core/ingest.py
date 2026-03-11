@@ -33,12 +33,13 @@ class IntelligenceAgent:
 
     def _fetch_url(self, url: str) -> str:
         try:
+            # We don't use text=True here because we want to handle decoding safely
             result = subprocess.run(
-                [self.fetch_bin, url], text=True, capture_output=True, check=True
+                [self.fetch_bin, url], capture_output=True, check=True
             )
-            return result.stdout.strip()
+            return result.stdout.decode('utf-8', errors='ignore').strip()
         except subprocess.CalledProcessError as e:
-            logger.error(f"Error fetching {url}: {e.stderr}")
+            logger.error(f"Error fetching {url}: {e.stderr.decode('utf-8', errors='ignore')}")
             return ""
 
     async def get_embedding(self, text: str) -> List[float]:
