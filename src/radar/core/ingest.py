@@ -136,26 +136,64 @@ class IntelligenceAgent:
 class DeepResearchAgent:
     def __init__(self):
         self.intel = IntelligenceAgent()
+        # Fallback sources if search fails
         self.sources = [
             "https://www.hpcwire.com/",
             "https://www.rtl-sdr.com/",
             "https://www.hackaday.com/",
             "https://thehackernews.com/",
+            "https://www.phoronix.com/",
+            "https://www.radioreference.com/",
         ]
 
     async def research(self, topic: str) -> str:
         logger.info(f"Performing local autonomous research on: {topic}")
         combined_text = ""
-        for url in self.sources:
-            content = self.intel._fetch_url(url)
-            # Only keep text related to the topic
-            if topic.lower() in content.lower():
-                combined_text += f"\n--- Source: {url} ---\n{content[:5000]}"
+
+        # 1. Use local DuckDuckGo scraper library to find relevant URLs
+        urls_to_scrape = []
+        try:
+            from ddgs import DDGS
+
+            with DDGS() as ddgs:
+                results = list(ddgs.text(topic, max_results=3))
+                for r in results:
+                    if "href" in r:
+                        urls_to_scrape.append(r["href"])
+        except Exception as e:
+            logger.error(f"DDGS search failed for {topic}: {e}")
+
+        # Fallback to static sources if search fails
+        if not urls_to_scrape:
+            urls_to_scrape = self.sources
+
+        # 2. Fetch the content of the discovered URLs using our fast C fetcher
+        topic_words = [w.lower() for w in topic.split() if len(w) > 3]
+
+        for url in urls_to_scrape:
+            try:
+                content = self.intel._fetch_url(url)
+                content_lower = content.lower()
+
+                # Verify relevance before appending
+                hit = False
+                for word in topic_words:
+                    if word in content_lower:
+                        hit = True
+                        break
+
+                if hit or not topic_words:
+                    # Truncate content to avoid overwhelming the C summarizer buffer
+                    combined_text += f"\n--- Source: {url} ---\n{content[:4000]}"
+            except Exception as e:
+                logger.error(f"Failed to fetch {url}: {e}")
 
         if not combined_text:
             return f"Local research found no direct hits on {topic} in monitored high-value domains."
 
-        summary = self.intel._run_tool(self.intel.summarize_bin, combined_text)
+        summary = self.intel._run_tool(
+            self.intel.summarize_bin, f"Question: {topic}\n{combined_text}"
+        )
         return f"Autonomous Research Report for: {topic}\n\n{summary}"
 
 

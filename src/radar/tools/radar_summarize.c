@@ -49,7 +49,6 @@ int main(int argc, char *argv[]) {
         if (strlen(buffer) > 15 && 
             strstr(buffer, "--- Signal:") == NULL && 
             strstr(buffer, "Context: ") == NULL &&
-            strstr(buffer, "Source: http") == NULL &&
             strstr(buffer, "Link: http") == NULL) {
             
             if (strchr(p, ' ') != NULL && 
@@ -66,6 +65,19 @@ int main(int argc, char *argv[]) {
                     current_title[strcspn(current_title, "\n")] = 0; // remove newline
                     current_title_printed = 0;
                     content_lines = 0; // Reset for new document
+                } else if (strncmp(p, "Source:", 7) == 0) {
+                    // Treat Source as a title for Deep Research outputs
+                    strncpy(current_title, p + 8, MAX_BUFFER);
+                    current_title[strcspn(current_title, "\n")] = 0;
+                    
+                    // Strip the trailing " ---" if it exists
+                    char *dash = strstr(current_title, " ---");
+                    if (dash != NULL) {
+                        *dash = '\0';
+                    }
+                    
+                    current_title_printed = 0;
+                    content_lines = 0;
                 } else {
                     char lower_p[MAX_BUFFER];
                     strncpy(lower_p, p, MAX_BUFFER);
