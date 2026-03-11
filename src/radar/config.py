@@ -1,23 +1,17 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pathlib import Path
 
 
 class Settings(BaseSettings):
     DB_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/radar"
-    GEMINI_API_KEY: str | None = None
-    GEMINI_MODEL: str = "gemini-3-flash-preview"
-    EMBEDDING_MODEL: str = "gemini-embedding-001"
 
-    # Cloud SQL IAM Auth Settings
+    # Cloud SQL IAM Auth Settings (Deprecated in local-only mode)
     INSTANCE_CONNECTION_NAME: str | None = None
     ENABLE_IAM_AUTH: bool = False
-    DB_USER: str = "postgres"  # For IAM, this would be the SA email or IAM user
+    DB_USER: str = "postgres"
     DB_PASSWORD: str | None = None
     DB_NAME: str = "radar"
 
-    model_config = SettingsConfigDict(
-        env_file=(".env", Path.home() / "config" / "radar" / ".env"), extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 settings = Settings()
