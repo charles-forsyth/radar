@@ -1,6 +1,6 @@
 [project]
 name = "radar"
-version = "0.22.0"
+version = "0.22.2"
 description = "Personal Industry Intelligence CLI"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -32,6 +32,7 @@ dependencies = [
     "fastapi>=0.135.1",
     "uvicorn>=0.41.0",
     "sentence-transformers>=5.2.3",
+    "trafilatura>=2.0.0",
 ]
 
 [project.scripts]
