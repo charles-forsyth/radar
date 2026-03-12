@@ -100,3 +100,35 @@ class TacticalAlert(SQLModel, table=True):
     message: str
     data_context: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.now)
+
+
+class Telemetry(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    timestamp: datetime = Field(default_factory=datetime.now, index=True)
+    temp_f: Optional[float] = None
+    aircraft_count: int = 0
+    lan_device_count: int = 0
+    ssh_failure_count: int = 0
+    internet_latency_ms: Optional[float] = None
+
+
+class RiverLevel(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    timestamp: datetime = Field(default_factory=datetime.now, index=True)
+    station_name: str = Field(index=True)
+    value: float
+    unit: str  # "ft" or "cfs"
+
+
+class RFPeak(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    timestamp: datetime = Field(default_factory=datetime.now, index=True)
+    frequency_mhz: float
+    power_db: float
+
+
+class SoftwareInventory(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    timestamp: datetime = Field(default_factory=datetime.now, index=True)
+    manager: str  # "apt", "pip", "uv", "micromamba"
+    package_count: int

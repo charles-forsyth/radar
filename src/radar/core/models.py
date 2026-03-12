@@ -1,6 +1,20 @@
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional, Dict, Any
+from datetime import datetime
 from radar.db.models import EntityType, ConnectionType
+
+
+class TacticalSnapshot(BaseModel):
+    timestamp: datetime = Field(default_factory=datetime.now)
+    temp_f: Optional[float] = None
+    aircraft_count: int = 0
+    lan_device_count: int = 0
+    ssh_failure_count: int = 0
+    internet_latency_ms: Optional[float] = None
+    rf_peaks: List[Dict[str, Any]] = []  # [{'freq': 155.0, 'power': 22.0}]
+    rivers: List[Dict[str, Any]] = []  # [{'name': '...', 'value': 7.0, 'unit': 'ft'}]
+    software: Dict[str, int] = {}  # {'apt': 3000, ...}
+    raw_sitrep: str = ""
 
 
 class ExtractedEntity(BaseModel):
