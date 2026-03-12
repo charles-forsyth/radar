@@ -469,13 +469,70 @@ class SatelliteScanner:
         except Exception as e: return f"Error: {e}"
 
 
+class LocalSoftwareScanner:
+    async def get_summary(self) -> str:
+        import subprocess
+        import asyncio
+
+        async def run_count(cmd: str) -> str:
+            try:
+                proc = await asyncio.create_subprocess_shell(
+                    cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                stdout, _ = await proc.communicate()
+                if proc.returncode == 0:
+                    count = int(stdout.decode().strip())
+                    # Adjust for standard list headers
+                    if "pip" in cmd: count -= 2
+                    if "dpkg" in cmd: count -= 5
+                    if "micromamba" in cmd: count -= 4
+                    return str(count)
+                return "Error"
+            except Exception:
+                return "Not Found"
+
+        # Gather package counts concurrently
+        dpkg_count, pip_count, uv_count, mm_count = await asyncio.gather(
+            run_count("dpkg -l | wc -l"),
+            run_count("/home/chuck/bin/pip list | wc -l"),
+            run_count("/home/chuck/.local/bin/uv pip list | wc -l"),
+            run_count("/home/chuck/bin/micromamba list | wc -l"),
+        )
+
+        return (
+            f"### LOCAL SYSTEM SOFTWARE INVENTORY\n"
+            f"- **APT (dpkg):** {dpkg_count} installed packages\n"
+            f"- **pip (Global):** {pip_count} installed packages\n"
+            f"- **uv (Local Env):** {uv_count} installed packages\n"
+            f"- **micromamba (Base):** {mm_count} installed packages"
+        )
+
+
 class TacticalAgent:
     def __init__(self):
-        self.adsb, self.aprs, self.sector, self.usgs, self.nws, self.cisa = ADSBScanner(), APRSStreamer(), SectorScanner(), USGSRiverGauge(), NWSAlerts(), CISAFeed()
+        self.adsb, self.aprs, self.sector, self.usgs, self.nws, self.cisa, self.software = (
+            ADSBScanner(),
+            APRSStreamer(),
+            SectorScanner(),
+            USGSRiverGauge(),
+            NWSAlerts(),
+            CISAFeed(),
+            LocalSoftwareScanner(),
+        )
+
     async def generate_full_sitrep(self, prev: Optional[str] = None) -> str:
         import asyncio
-        data = await asyncio.gather(self.adsb.get_snapshot_text(), self.sector.get_atmos_weather(), self.aprs.get_snapshot_text(), self.usgs.get_levels(), self.nws.get_alerts(), self.cisa.get_latest_vulns())
-        return f"Title: Master Tactical SITREP - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{data[1]}\n{data[4]}\n{data[3]}\n{data[0]}\n{data[2]}\n{data[5]}"
+
+        data = await asyncio.gather(
+            self.adsb.get_snapshot_text(),
+            self.sector.get_atmos_weather(),
+            self.aprs.get_snapshot_text(),
+            self.usgs.get_levels(),
+            self.nws.get_alerts(),
+            self.cisa.get_latest_vulns(),
+            self.software.get_summary(),
+        )
+        return f"Title: Master Tactical SITREP - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{data[1]}\n{data[4]}\n{data[3]}\n{data[6]}\n{data[0]}\n{data[2]}\n{data[5]}"
 
 
 class ADSBScanner:
