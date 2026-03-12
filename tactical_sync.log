@@ -228,3 +228,202 @@ Executing Tactical SITREP Ingest...
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ImportError: cannot import name 'TextIngestAgent' from 'radar.core.ingest' 
 (/home/chuck/Projects/radar/src/radar/core/ingest.py)
+Executing Tactical SITREP Ingest...
+╭───────────────────── Traceback (most recent call last) ──────────────────────╮
+│ /home/chuck/Projects/radar/src/radar/main.py:392 in sync                     │
+│                                                                              │
+│   389 │   │   finally:                                                       │
+│   390 │   │   │   pass                                                       │
+│   391 │                                                                      │
+│ ❱ 392 │   asyncio.run(do_sync())                                             │
+│   393                                                                        │
+│   394                                                                        │
+│   395 async def save_ingest_to_db(signal, kg):                               │
+│                                                                              │
+│ ╭───── locals ─────╮                                                         │
+│ │    daily = False │                                                         │
+│ │ tactical = True  │                                                         │
+│ │    voice = False │                                                         │
+│ │      web = False │                                                         │
+│ ╰──────────────────╯                                                         │
+│                                                                              │
+│ /home/chuck/lib/python3.12/asyncio/runners.py:194 in run                     │
+│                                                                              │
+│   191 │   │   │   "asyncio.run() cannot be called from a running event loop" │
+│   192 │                                                                      │
+│   193 │   with Runner(debug=debug, loop_factory=loop_factory) as runner:     │
+│ ❱ 194 │   │   return runner.run(main)                                        │
+│   195                                                                        │
+│   196                                                                        │
+│   197 def _cancel_all_tasks(loop):                                           │
+│                                                                              │
+│ ╭─────────────────────────────── locals ────────────────────────────────╮    │
+│ │        debug = None                                                   │    │
+│ │ loop_factory = None                                                   │    │
+│ │         main = <coroutine object sync.<locals>.do_sync at 0x274090b0> │    │
+│ │       runner = <asyncio.runners.Runner object at 0x74c21e2d3770>      │    │
+│ ╰───────────────────────────────────────────────────────────────────────╯    │
+│                                                                              │
+│ /home/chuck/lib/python3.12/asyncio/runners.py:118 in run                     │
+│                                                                              │
+│   115 │   │                                                                  │
+│   116 │   │   self._interrupt_count = 0                                      │
+│   117 │   │   try:                                                           │
+│ ❱ 118 │   │   │   return self._loop.run_until_complete(task)                 │
+│   119 │   │   except exceptions.CancelledError:                              │
+│   120 │   │   │   if self._interrupt_count > 0:                              │
+│   121 │   │   │   │   uncancel = getattr(task, "uncancel", None)             │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │        context = <_contextvars.Context object at 0x74c21e3a8c80>         │ │
+│ │           coro = <coroutine object sync.<locals>.do_sync at 0x274090b0>  │ │
+│ │           self = <asyncio.runners.Runner object at 0x74c21e2d3770>       │ │
+│ │ sigint_handler = functools.partial(<bound method Runner._on_sigint of    │ │
+│ │                  <asyncio.runners.Runner object at 0x74c21e2d3770>>,     │ │
+│ │                  main_task=<Task finished name='Task-1'                  │ │
+│ │                  coro=<sync.<locals>.do_sync() done, defined at          │ │
+│ │                  /home/chuck/Projects/radar/src/radar/main.py:197>       │ │
+│ │                  exception=TypeError("TacticalAgent.generate_full_sitre… │ │
+│ │                  got an unexpected keyword argument                      │ │
+│ │                  'previous_sitrep'")>)                                   │ │
+│ │           task = <Task finished name='Task-1'                            │ │
+│ │                  coro=<sync.<locals>.do_sync() done, defined at          │ │
+│ │                  /home/chuck/Projects/radar/src/radar/main.py:197>       │ │
+│ │                  exception=TypeError("TacticalAgent.generate_full_sitre… │ │
+│ │                  got an unexpected keyword argument 'previous_sitrep'")> │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ /home/chuck/lib/python3.12/asyncio/base_events.py:684 in run_until_complete  │
+│                                                                              │
+│    681 │   │   if not future.done():                                         │
+│    682 │   │   │   raise RuntimeError('Event loop stopped before Future comp │
+│    683 │   │                                                                 │
+│ ❱  684 │   │   return future.result()                                        │
+│    685 │                                                                     │
+│    686 │   def stop(self):                                                   │
+│    687 │   │   """Stop running the event loop.                               │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │   future = <Task finished name='Task-1' coro=<sync.<locals>.do_sync()    │ │
+│ │            done, defined at                                              │ │
+│ │            /home/chuck/Projects/radar/src/radar/main.py:197>             │ │
+│ │            exception=TypeError("TacticalAgent.generate_full_sitrep() got │ │
+│ │            an unexpected keyword argument 'previous_sitrep'")>           │ │
+│ │ new_task = False                                                         │ │
+│ │     self = <_UnixSelectorEventLoop running=False closed=True             │ │
+│ │            debug=False>                                                  │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ /home/chuck/Projects/radar/src/radar/main.py:339 in do_sync                  │
+│                                                                              │
+│   336 │   │   │   │   )                                                      │
+│   337 │   │   │   │                                                          │
+│   338 │   │   │   │   agent = TacticalAgent()                                │
+│ ❱ 339 │   │   │   │   sitrep_text = await agent.generate_full_sitrep(        │
+│   340 │   │   │   │   │   previous_sitrep=prev_sitrep                        │
+│   341 │   │   │   │   )                                                      │
+│   342                                                                        │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │            agent = <radar.core.ingest.TacticalAgent object at            │ │
+│ │                    0x74c21e2d3f50>                                       │ │
+│ │ baseline_context = '--- SITREP 2026-03-11 20:00:12.759595 ---\nTitle:    │ │
+│ │                    Master Tactical SITREP - 2026-0'+2094                 │ │
+│ │     baseline_res = <sqlalchemy.engine.result.ChunkedIteratorResult       │ │
+│ │                    object at 0x74c21c15d910>                             │ │
+│ │ baseline_sitreps = [                                                     │ │
+│ │                    │   Signal(                                           │ │
+│ │                    │   │                                                 │ │
+│ │                    id=UUID('4014cca5-c0f6-493c-9147-30be10b99842'),      │ │
+│ │                    │   │   content='Title: Master Tactical SITREP -      │ │
+│ │                    2026-03-11 20:00:01\nSource: Integrated Sensor        │ │
+│ │                    Ar'+3480,                                             │ │
+│ │                    │   │   raw_text=None,                                │ │
+│ │                    │   │   source='local_nlp',                           │ │
+│ │                    │   │   date=datetime.datetime(2026, 3, 11, 20, 0,    │ │
+│ │                    12, 759595),                                          │ │
+│ │                    │   │   title='Title: Master Tactical SITREP -        │ │
+│ │                    2026-03-11 20:00:01',                                 │ │
+│ │                    │   │   url=None,                                     │ │
+│ │                    │   │   vector=None                                   │ │
+│ │                    │   ),                                                │ │
+│ │                    │   Signal(                                           │ │
+│ │                    │   │                                                 │ │
+│ │                    id=UUID('15673bc2-3e9c-4a6c-9f0c-cb43915afab7'),      │ │
+│ │                    │   │   content='Title: Master Tactical SITREP -      │ │
+│ │                    2026-03-11 19:30:01\nSource: Integrated Sensor        │ │
+│ │                    Ar'+2777,                                             │ │
+│ │                    │   │   raw_text=None,                                │ │
+│ │                    │   │   source='local_nlp',                           │ │
+│ │                    │   │   date=datetime.datetime(2026, 3, 11, 19, 30,   │ │
+│ │                    5, 941574),                                           │ │
+│ │                    │   │   title='Title: Master Tactical SITREP -        │ │
+│ │                    2026-03-11 19:30:01',                                 │ │
+│ │                    │   │   url=None,                                     │ │
+│ │                    │   │   vector=None                                   │ │
+│ │                    │   ),                                                │ │
+│ │                    │   Signal(                                           │ │
+│ │                    │   │                                                 │ │
+│ │                    id=UUID('6404810f-30e2-429a-b6c7-65e70ed4824f'),      │ │
+│ │                    │   │   content='Title: Master Tactical SITREP -      │ │
+│ │                    2026-03-11 19:00:02\nSource: Integrated Sensor        │ │
+│ │                    Ar'+2959,                                             │ │
+│ │                    │   │   raw_text=None,                                │ │
+│ │                    │   │   source='local_nlp',                           │ │
+│ │                    │   │   date=datetime.datetime(2026, 3, 11, 19, 0,    │ │
+│ │                    10, 3929),                                            │ │
+│ │                    │   │   title='Title: Master Tactical SITREP -        │ │
+│ │                    2026-03-11 19:00:02',                                 │ │
+│ │                    │   │   url=None,                                     │ │
+│ │                    │   │   vector=None                                   │ │
+│ │                    │   ),                                                │ │
+│ │                    │   Signal(                                           │ │
+│ │                    │   │                                                 │ │
+│ │                    id=UUID('7c55f916-fdec-4ac8-b61e-559600a7db50'),      │ │
+│ │                    │   │   content='Title: Master Tactical SITREP -      │ │
+│ │                    2026-03-11 18:30:01\nSource: Integrated Sensor        │ │
+│ │                    Ar'+2793,                                             │ │
+│ │                    │   │   raw_text=None,                                │ │
+│ │                    │   │   source='local_nlp',                           │ │
+│ │                    │   │   date=datetime.datetime(2026, 3, 11, 18, 30,   │ │
+│ │                    6, 482367),                                           │ │
+│ │                    │   │   title='Title: Master Tactical SITREP -        │ │
+│ │                    2026-03-11 18:30:01',                                 │ │
+│ │                    │   │   url=None,                                     │ │
+│ │                    │   │   vector=None                                   │ │
+│ │                    │   )                                                 │ │
+│ │                    ]                                                     │ │
+│ │    baseline_stmt = <sqlalchemy.sql.selectable.Select object at           │ │
+│ │                    0x74c21c136de0>                                       │ │
+│ │            daily = False                                                 │ │
+│ │         last_sig = Signal(                                               │ │
+│ │                    │   id=UUID('4014cca5-c0f6-493c-9147-30be10b99842'),  │ │
+│ │                    │   content='Title: Master Tactical SITREP -          │ │
+│ │                    2026-03-11 20:00:01\nSource: Integrated Sensor        │ │
+│ │                    Ar'+3480,                                             │ │
+│ │                    │   raw_text=None,                                    │ │
+│ │                    │   source='local_nlp',                               │ │
+│ │                    │   date=datetime.datetime(2026, 3, 11, 20, 0, 12,    │ │
+│ │                    759595),                                              │ │
+│ │                    │   title='Title: Master Tactical SITREP - 2026-03-11 │ │
+│ │                    20:00:01',                                            │ │
+│ │                    │   url=None,                                         │ │
+│ │                    │   vector=None                                       │ │
+│ │                    )                                                     │ │
+│ │               os = <module 'os' (frozen)>                                │ │
+│ │      prev_sitrep = 'Title: Master Tactical SITREP - 2026-03-11           │ │
+│ │                    20:00:01\nSource: Integrated Sensor Ar'+3480          │ │
+│ │           result = <sqlalchemy.engine.result.ChunkedIteratorResult       │ │
+│ │                    object at 0x74c21e416dd0>                             │ │
+│ │          session = <sqlalchemy.ext.asyncio.session.AsyncSession object   │ │
+│ │                    at 0x74c21e2354f0>                                    │ │
+│ │   seven_days_ago = datetime.datetime(2026, 3, 4, 21, 0, 2, 461396)       │ │
+│ │             stmt = <sqlalchemy.sql.selectable.Select object at           │ │
+│ │                    0x74c21e2d39b0>                                       │ │
+│ │         tactical = True                                                  │ │
+│ │            voice = False                                                 │ │
+│ │              web = False                                                 │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+╰──────────────────────────────────────────────────────────────────────────────╯
+TypeError: TacticalAgent.generate_full_sitrep() got an unexpected keyword 
+argument 'previous_sitrep'

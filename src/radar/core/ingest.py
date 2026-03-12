@@ -32,7 +32,7 @@ class IntelligenceAgent:
         return [await self.get_embedding(t) for t in texts]
 
     async def search_signals(self, query: str, limit: int = 5) -> List[Signal]:
-        """Hybrid Search using local BM25s, prioritized by date."""
+        """Hybrid Search using local BM25s, prioritized by date with deduplication."""
         from sqlalchemy import select, desc
         import bm25s
 
@@ -44,15 +44,23 @@ class IntelligenceAgent:
             if not signals:
                 return []
                 
-            corpus = [f"{s.title}\n{s.content}" for s in signals]
+            # Deduplicate by title before indexing to prevent spamming the results
+            seen_titles = set()
+            unique_signals = []
+            for s in signals:
+                if s.title not in seen_titles:
+                    seen_titles.add(s.title)
+                    unique_signals.append(s)
+            
+            corpus = [f"{s.title}\n{s.content}" for s in unique_signals]
             retriever = bm25s.BM25()
             corpus_tokens = bm25s.tokenize(corpus, stopwords="en")
             retriever.index(corpus_tokens)
             
             query_tokens = bm25s.tokenize([query], stopwords="en")
-            doc_indices, scores = retriever.retrieve(query_tokens, k=limit)
+            doc_indices, scores = retriever.retrieve(query_tokens, k=min(limit, len(unique_signals)))
             
-            return [signals[int(idx)] for idx in doc_indices[0]]
+            return [unique_signals[int(idx)] for idx in doc_indices[0]]
 
     def _run_tool(self, tool: str, text: str) -> str:
         try:
@@ -194,16 +202,45 @@ class BrowserIngestAgent:
             async with async_playwright() as p:
                 browser = await p.chromium.launch(headless=True)
                 page = await browser.new_page(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                await page.goto(url, wait_until="domcontentloaded", timeout=40000)
-                await asyncio.sleep(5)
+                await page.goto(url, wait_until="networkidle", timeout=40000)
+                await asyncio.sleep(2)
                 try:
                     # Dismiss modals
                     await page.get_by_role("button", name="Got it").click(timeout=2000)
                     await asyncio.sleep(1)
                 except Exception: pass
                 
-                # GRAB EVERYTHING. No fragile table parsing.
-                content = await page.evaluate("() => document.body.innerText")
+                # Precise table parsing for Broadcastify
+                if "broadcastify.com" in url:
+                    try:
+                        await page.wait_for_selector(".btable", timeout=15000)
+                        extracted_feeds = await page.evaluate("""() => {
+                            const results = [];
+                            const rows = document.querySelectorAll('.btable tr');
+                            rows.forEach(row => {
+                                const cells = row.querySelectorAll('td');
+                                if (cells.length > 3) {
+                                    const feedName = cells[1].innerText ? cells[1].innerText.trim().split('\\n').join(' - ') : "";
+                                    const genre = cells[2].innerText ? cells[2].innerText.trim() : "";
+                                    const listeners = cells[3].innerText ? cells[3].innerText.trim() : "";
+                                    
+                                    if (genre.includes('Public Safety') || parseInt(listeners) >= 0) {
+                                        results.push(`Feed: ${feedName} | Genre: ${genre} | Listeners: ${listeners}`);
+                                    }
+                                }
+                            });
+                            return results;
+                        }""")
+                    except Exception as bcf_err:
+                        logger.error(f"Broadcastify table extraction failed: {bcf_err}")
+                        extracted_feeds = []
+                        
+                    if extracted_feeds:
+                        content = "BROADCASTIFY LIVE FEED DATA:\n" + "\n".join(extracted_feeds)
+                    else:
+                        content = await page.evaluate("() => document.body.innerText")
+                else:
+                    content = await page.evaluate("() => document.body.innerText")
                 
                 if (len(content) < 500 or "map" in url.lower()) and "ocr" in instructions.lower():
                     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
@@ -217,7 +254,8 @@ class BrowserIngestAgent:
                     finally:
                         if os.path.exists(spath): os.remove(spath)
                 await browser.close()
-        except Exception:
+        except Exception as e:
+            logger.error(f"Playwright dynamic extraction failed for {url}: {e}")
             content = self.intel._fetch_url(url)
         return self.intel._run_tool(self.intel.summarize_bin, f"Question: {instructions}\nTarget: {url}\n\n{content[:15000]}")
 
