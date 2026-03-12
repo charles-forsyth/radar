@@ -21,19 +21,65 @@ class IntelligenceAgent:
         self.summarize_bin = "src/radar/tools/radar_summarize"
         self.fetch_bin = "src/radar/tools/radar_fetch"
 
-    async def get_embedding(self, text: str) -> List[float]:
-        from sentence_transformers import SentenceTransformer
-        import numpy as np
+        # Initialize the SentenceTransformer model once on startup
         import warnings
+        import logging
 
+        # Suppress FutureWarnings from tokenizers library and verbose logging from transformers
         warnings.filterwarnings("ignore", category=FutureWarning)
+        logging.getLogger("transformers").setLevel(
+            logging.ERROR
+        )  # Suppress verbose transformers output
+        logging.getLogger("sentence_transformers").setLevel(
+            logging.ERROR
+        )  # Suppress even more
 
-        model = SentenceTransformer("all-MiniLM-L6-v2")
-        embedding = model.encode(text)
+        from sentence_transformers import SentenceTransformer
+
+        self.embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+
+    async def get_embedding(self, text: str) -> List[float]:
+        import numpy as np
+
+        embedding = self.embedding_model.encode(text)
 
         padded_embedding = np.zeros(3072)
         padded_embedding[:384] = embedding
         return padded_embedding.tolist()
+
+    async def debug_semantic_distance(
+        self, query: str, signal_title_substring: str
+    ) -> None:
+        import numpy as np
+        from sqlalchemy import select
+        from radar.db.models import Signal
+
+        query_vector = np.array(await self.get_embedding(query))
+
+        async with async_session() as session:
+            stmt = (
+                select(Signal)
+                .where(Signal.title.ilike(f"%{signal_title_substring}%"))  # type: ignore
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            signal = result.scalars().first()
+
+            if signal is not None and signal.vector is not None:
+                signal_vector = np.array(signal.vector)
+                # Calculate L2 distance (Euclidean distance)
+                l2_dist = np.linalg.norm(query_vector - signal_vector)
+                # Calculate Cosine Similarity
+                cosine_sim = np.dot(query_vector, signal_vector) / (
+                    np.linalg.norm(query_vector) * np.linalg.norm(signal_vector)
+                )
+                print(f"\nDEBUG: Semantic Distance for '{signal.title}' vs '{query}'")
+                print(f"  L2 Distance: {l2_dist:.4f}")
+                print(f"  Cosine Similarity: {cosine_sim:.4f}")
+            else:
+                print(
+                    f"\nDEBUG: Signal with title containing '{signal_title_substring}' not found or has no vector."
+                )
 
     async def get_batch_embeddings(self, texts: List[str]) -> List[List[float]]:
         return [await self.get_embedding(t) for t in texts]
@@ -53,7 +99,9 @@ class IntelligenceAgent:
             stmt = (
                 select(Signal)
                 .order_by(Signal.vector.l2_distance(query_vector))  # type: ignore
-                .limit(100)
+                .limit(
+                    300
+                )  # Increased to broaden candidate pool for semantic and keyword reranking
             )
             results = await session.execute(stmt)
             signals = results.scalars().all()
@@ -103,17 +151,21 @@ class IntelligenceAgent:
                 if "new" in query.lower():
                     decay = np.exp(-np.log(2) * age_hours / 6.0)
 
-                is_sitrep_query = any(
+                is_sitrep_query_keywords = any(
                     k in query.lower()
                     for k in ["tactical", "situation", "report", "sitrep"]
+                )
+                is_current_condition_query = any(
+                    k in query.lower()
+                    for k in ["weather", "up", "current", "latest", "now", "status"]
                 )
                 is_sitrep_doc = "SITREP" in sig.title.upper()
 
                 boost = 1.0
-                if is_sitrep_doc and is_sitrep_query:
-                    boost = 15.0
+                if is_sitrep_doc and (is_sitrep_query_keywords or is_current_condition_query):
+                    boost = 100.0 # Extremely high priority for current tactical situational awareness
                 elif is_sitrep_doc:
-                    boost = 2.0
+                    boost = 5.0 # General sitrep boost (even without specific query keywords)
 
                 final_score = effective_score * decay * boost
                 adjusted_scores.append((final_score, sig))
