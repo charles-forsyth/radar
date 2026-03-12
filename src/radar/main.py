@@ -671,287 +671,205 @@ def report(
         True, "--open", help="Open the report in browser."
     ),
 ):
-    """Generate a high-fidelity 'Structured Telemetry' glass dashboard querying relational tables."""
+    """Generate a high-fidelity 'AI-Powered Command Center' briefing with deep data integration."""
     import jinja2
     from sqlalchemy import select, desc
+    import re
     import asyncio
 
     async def _report():
-        console.print("[bold blue]Forging Structured Tactical Dashboard...[/bold blue]")
+        console.print("[bold blue]Forging v0.33 AI Executive Briefing...[/bold blue]")
+
+        from radar.core.ingest import IntelligenceAgent
+
+        intel = IntelligenceAgent()
 
         async with async_session() as session:
-            # 1. Fetch Latest Telemetry
+            # 1. Fetch Core Relational Data
             tel_stmt = select(Telemetry).order_by(desc(Telemetry.timestamp)).limit(2)
             tel_results = (await session.execute(tel_stmt)).scalars().all()
             curr_tel = tel_results[0] if len(tel_results) > 0 else None
-            prev_tel = tel_results[1] if len(tel_results) > 1 else None
 
-            # 2. Fetch Latest Rivers (and previous for delta)
             river_stmt = (
                 select(RiverLevel).order_by(desc(RiverLevel.timestamp)).limit(60)
             )
             river_results = (await session.execute(river_stmt)).scalars().all()
 
-            station_data = {}
-            for r in river_results:
-                if r.station_name not in station_data:
-                    station_data[r.station_name] = []
-                if len(station_data[r.station_name]) < 2:
-                    station_data[r.station_name].append(r)
+            rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(20)
+            rf_peaks_all = (await session.execute(rf_stmt)).scalars().all()
 
-            latest_rivers = []
-            for name, items in station_data.items():
-                curr = items[0]
-                prev = items[1] if len(items) > 1 else None
-                delta = 0.0
-                if prev:
-                    delta = curr.value - prev.value
-
-                latest_rivers.append(
-                    {
-                        "station_name": name,
-                        "value": curr.value,
-                        "unit": curr.unit,
-                        "delta": delta,
-                    }
-                )
-
-            # 3. Fetch Latest RF Peaks (and previous for delta)
-            rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(30)
-            rf_results = (await session.execute(rf_stmt)).scalars().all()
-
-            peak_map = {}
-            for r in rf_results:
-                f_key = round(r.frequency_mhz, 1)
-                if f_key not in peak_map:
-                    peak_map[f_key] = []
-                if len(peak_map[f_key]) < 2:
-                    peak_map[f_key].append(r)
-
-            processed_rf = []
-            for f_key, items in peak_map.items():
-                curr = items[0]
-                prev = items[1] if len(items) > 1 else None
-                p_delta = curr.power_db - prev.power_db if prev else 0.0
-                processed_rf.append(
-                    {
-                        "frequency_mhz": curr.frequency_mhz,
-                        "power_db": curr.power_db,
-                        "delta": p_delta,
-                    }
-                )
-            processed_rf.sort(key=lambda x: x["power_db"], reverse=True)
-            processed_rf = processed_rf[:10]
-
-            # 4. Fetch Software Arsenal (with deltas)
-            sw_stmt = (
-                select(SoftwareInventory)
-                .order_by(desc(SoftwareInventory.timestamp))
-                .limit(20)
-            )
-            sw_results = (await session.execute(sw_stmt)).scalars().all()
-
-            sw_map = {}
-            for s in sw_results:
-                if s.manager not in sw_map:
-                    sw_map[s.manager] = []
-                if len(sw_map[s.manager]) < 2:
-                    sw_map[s.manager].append(s)
-
-            latest_sw = []
-            for manager, items in sw_map.items():
-                curr = items[0]
-                prev = items[1] if len(items) > 1 else None
-                count_delta = curr.package_count - prev.package_count if prev else 0
-                latest_sw.append(
-                    {
-                        "manager": manager.upper(),
-                        "count": curr.package_count,
-                        "delta": count_delta,
-                    }
-                )
-            latest_sw.sort(key=lambda x: x["manager"])
-
-            # 5. Fetch Alerts
             alert_stmt = (
-                select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(12)
+                select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(10)
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
-            # 6. Fetch Extracted Research Stats (with deltas)
             stats_stmt = select(Statistic).order_by(desc(Statistic.timestamp)).limit(60)
             all_stats = (await session.execute(stats_stmt)).scalars().all()
 
-            # Map by label to find previous values
-            stats_map = {}
-            for s in all_stats:
-                key = (s.category, s.label)
-                if key not in stats_map:
-                    stats_map[key] = []
-                if len(stats_map[key]) < 2:
-                    stats_map[key].append(s)
+            sig_stmt = select(Signal).order_by(desc(Signal.date)).limit(50)
+            recent_signals = (await session.execute(sig_stmt)).scalars().all()
 
-            # Group by category for the cool display
-            categorized_stats = {}
-            for key, items in stats_map.items():
-                cat, label = key
-                curr = items[0]
-                prev = items[1] if len(items) > 1 else None
-                s_delta = curr.value - prev.value if prev else 0.0
+        # Calculate Security Score
+        ssh_count = curr_tel.ssh_failure_count if curr_tel else 0
+        alert_count = len([a for a in alerts if a.severity in ["WARNING", "CRITICAL"]])
+        sec_score = max(0, 100 - (ssh_count * 1.5) - (alert_count * 10))
 
-                if cat not in categorized_stats:
-                    categorized_stats[cat] = []
+        # Process Rivers
+        station_data = {}
+        for r in river_results:
+            if r.station_name not in station_data:
+                station_data[r.station_name] = []
+            if len(station_data[r.station_name]) < 2:
+                station_data[r.station_name].append(r)
 
-                categorized_stats[cat].append(
-                    {
-                        "label": label,
-                        "value": curr.value,
-                        "unit": curr.unit or "",
-                        "delta": s_delta,
-                    }
-                )
-
-        # Prep deltas and formatted metrics
-        m_curr = {
-            "temp": curr_tel.temp_f if curr_tel else 0.0,
-            "temp_delta": (curr_tel.temp_f - prev_tel.temp_f)
-            if curr_tel and prev_tel and curr_tel.temp_f and prev_tel.temp_f
-            else 0.0,
-            "planes": curr_tel.aircraft_count if curr_tel else 0,
-            "planes_delta": (curr_tel.aircraft_count - prev_tel.aircraft_count)
-            if curr_tel and prev_tel
-            else 0,
-            "devices": curr_tel.lan_device_count if curr_tel else 0,
-            "devices_delta": (curr_tel.lan_device_count - prev_tel.lan_device_count)
-            if curr_tel and prev_tel
-            else 0,
-            "ssh": curr_tel.ssh_failure_count if curr_tel else 0,
-            "ssh_delta": (curr_tel.ssh_failure_count - prev_tel.ssh_failure_count)
-            if curr_tel and prev_tel
-            else 0,
-            "latency": curr_tel.internet_latency_ms if curr_tel else 0.0,
-            "latency_delta": (
-                curr_tel.internet_latency_ms - prev_tel.internet_latency_ms
+        latest_rivers = []
+        for name, items in station_data.items():
+            curr, prev = items[0], (items[1] if len(items) > 1 else None)
+            latest_rivers.append(
+                {
+                    "name": name,
+                    "val": curr.value,
+                    "unit": curr.unit,
+                    "delta": curr.value - prev.value if prev else 0,
+                }
             )
-            if curr_tel
-            and prev_tel
-            and curr_tel.internet_latency_ms
-            and prev_tel.internet_latency_ms
-            else 0.0,
-        }
 
-        deltas = []
-        if curr_tel and prev_tel:
-            if curr_tel.lan_device_count != prev_tel.lan_device_count:
-                diff = curr_tel.lan_device_count - prev_tel.lan_device_count
-                deltas.append(f"Subnet: {'+' if diff > 0 else ''}{diff} nodes.")
-            if curr_tel.ssh_failure_count > prev_tel.ssh_failure_count:
-                deltas.append(
-                    f"Intrusions: +{curr_tel.ssh_failure_count - prev_tel.ssh_failure_count} SSH fails."
-                )
-            if abs(curr_tel.aircraft_count - prev_tel.aircraft_count) > 2:
-                deltas.append(f"Airspace: {curr_tel.aircraft_count} active units.")
+        # Process RF Peaks
+        peak_map = {}
+        for r in rf_peaks_all:
+            f_key = round(r.frequency_mhz, 1)
+            if f_key not in peak_map:
+                peak_map[f_key] = []
+            if len(peak_map[f_key]) < 2:
+                peak_map[f_key].append(r)
+        processed_rf = []
+        for f, items in peak_map.items():
+            c, p = items[0], (items[1] if len(items) > 1 else None)
+            processed_rf.append(
+                {
+                    "freq": c.frequency_mhz,
+                    "db": c.power_db,
+                    "delta": c.power_db - p.power_db if p else 0,
+                }
+            )
+        processed_rf.sort(key=lambda x: x["db"], reverse=True)
+
+        # Process Research Stats
+        stats_map = {}
+        for s in all_stats:
+            key = (s.category, s.label)
+            if key not in stats_map:
+                stats_map[key] = []
+            if len(stats_map[key]) < 2:
+                stats_map[key].append(s)
+        categorized_stats = {}
+        for key, items in stats_map.items():
+            cat, label = key
+            curr, prev = items[0], (items[1] if len(items) > 1 else None)
+            if cat not in categorized_stats:
+                categorized_stats[cat] = []
+            categorized_stats[cat].append(
+                {
+                    "label": label,
+                    "val": curr.value,
+                    "unit": curr.unit or "",
+                    "delta": curr.value - prev.value if prev else 0,
+                }
+            )
+
+        # AI STRATEGIC ASSESSMENT
+        with console.status(
+            "[bold magenta]Local Intelligence Engine is performing deep sector analysis...[/bold magenta]"
+        ):
+            questions = [
+                "Identify the top 3 tactical threats or technical vulnerabilities discovered in recent reports.",
+                "Summarize the most significant regional infrastructure updates (Rail, Power, Emergency Services).",
+                "Extract the 3 most important hardware or AI technology breakthroughs from the latest ingest.",
+            ]
+
+            async def ask_brain(q):
+                ans = await intel.answer_question(q, recent_signals)
+                return re.sub(r"🎯.*?\\n|📌.*?\\n", "", ans).strip()
+
+            ai_results = await asyncio.gather(*[ask_brain(q) for q in questions])
 
         report_css = """
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap');
-        body { background-color: #05070a; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; overflow-y: auto; }
-        .grid-container { display: grid; grid-template-columns: 320px 1fr 320px; grid-template-rows: 60px auto auto; gap: 15px; width: 100%; }
-        .header { grid-column: 1 / span 3; border: 1px solid #00ff41; display: flex; justify-content: space-between; align-items: center; padding: 10px 25px; background: #00ff4111; }
-        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.4rem; font-weight: bold; text-shadow: 0 0 10px #00ff41; }
-        .block { border: 1px solid #00ff41; background: #080c12; padding: 20px; position: relative; min-height: 150px; }
-        .block-label { position: absolute; top: -9px; left: 15px; background: #05070a; padding: 0 8px; color: #00ff41; font-weight: bold; font-size: 10px; border: 1px solid #00ff41; }
-        .col { display: flex; flex-direction: column; gap: 15px; }
-        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #004111; padding: 8px 0; }
-        .stat-label { color: #008f11; font-size: 9px; }
-        .stat-val { font-weight: bold; }
-        .big-metric { font-size: 3rem; font-weight: bold; text-align: center; margin: 15px 0; text-shadow: 0 0 20px #00ff41; }
-        .alert-box { border: 1px solid #ff3131; background: rgba(248, 81, 73, 0.1); color: #ff3131; padding: 10px; margin-bottom: 8px; font-size: 10px; }
-        .blink { animation: blink 1.5s infinite; }
-        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
-        
-        /* Cool Stats Styles */
-        .cat-section { margin-bottom: 25px; }
-        .cat-title { color: #000; background: #00ff41; padding: 4px 10px; display: inline-block; margin-bottom: 10px; font-weight: bold; font-size: 10px; box-shadow: 0 0 8px #00ff41; }
-        .stat-card { border: 1px solid #004111; background: #0a0f18; padding: 12px; margin-bottom: 8px; }
-        .trend-up { color: #ff3131; }
-        .trend-down { color: #39d353; }
-        .trend-stable { color: #ffff00; }
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=JetBrains+Mono:wght@400;700&display=swap');
+        body { background-color: #030508; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 20px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+        .dashboard { display: grid; grid-template-columns: 350px 1fr 350px; gap: 20px; }
+        .header { grid-column: 1 / span 3; border: 2px solid #00ff41; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; background: #00ff4111; box-shadow: 0 0 20px #00ff4133; margin-bottom: 20px; }
+        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.8rem; font-weight: 900; }
+        .box { border: 1px solid #00ff41; background: #080c12; padding: 20px; position: relative; margin-bottom: 20px; box-shadow: inset 0 0 15px #00ff4111; }
+        .box-label { position: absolute; top: -10px; left: 20px; background: #030508; border: 1px solid #00ff41; padding: 0 10px; color: #00ff41; font-weight: bold; font-size: 10px; }
+        .big-val { font-size: 3.5rem; font-weight: 900; text-align: center; text-shadow: 0 0 25px #00ff41; margin: 10px 0; }
+        .score-box { background: #00ff4111; border: 1px solid #00ff41; padding: 10px; text-align: center; font-size: 9px; }
+        .ai-dispatch { background: #0a0f18; border-left: 5px solid #00ff41; padding: 20px; margin-bottom: 25px; }
+        .ai-title { color: #00ff41; font-weight: bold; font-size: 14px; border-bottom: 1px solid #004111; padding-bottom: 10px; margin-bottom: 15px; }
+        .ai-body { color: #cfd2d6; text-transform: none; line-height: 1.6; font-size: 13px; }
+        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #002105; padding: 8px 0; }
+        .stat-label { color: #008f11; }
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
         """
 
         template = jinja2.Template("""
         <html>
-        <head><style>{{ css }}</style><title>RADAR STRUCTURED HUD</title></head>
+        <head><style>{{ css }}</style><title>RADAR COMMAND CENTER</title></head>
         <body>
-            <div class="grid-container">
+            <div class="dashboard">
                 <div class="header">
-                    <div class="header-title"><span class="blink">●</span> RADAR // STRUCTURED TELEMETRY HUD</div>
-                    <div style="color: #008f11; text-align: right; font-size: 10px;">SECTOR: TIOGA PA | RELATIONAL DB: POSTGRESQL<br>GEN: {{ now }} | VER: {{ version }}</div>
+                    <div class="header-title"><span class="pulse">●</span> RADAR COMMAND CENTER</div>
+                    <div style="text-align: right; font-weight: bold;">SECTOR: TIOGA PA | {{ now }} | v{{ version }}</div>
                 </div>
-
                 <div class="col">
-                    <div class="block" style="flex: 0 0 200px;">
-                        <div class="block-label">ATMOSPHERICS</div>
-                        <div class="big-metric">{{ m.temp }}°F <span style="font-size: 12px; color: #ffff00;">({% if m.temp_delta > 0 %}+{% endif %}{{ "%.1f"|format(m.temp_delta) }})</span></div>
-                        <div style="text-align: center; font-size: 10px; color: #008f11;">STRUCTURED SENSOR DATA</div>
+                    <div class="box">
+                        <div class="box-label">ATMOSPHERICS</div>
+                        <div class="big-val">{{ tel.temp_f }}°F</div>
                     </div>
-                    <div class="block" style="flex: 1;">
-                        <div class="block-label">SIGINT SPECTRUM PEAKS</div>
-                        {% for f in rf %}
-                        <div class="stat-row"><span class="stat-label">SIGNAL</span><span class="stat-val">{{ f.frequency_mhz }} MHz ({{ f.power_db }} dB) {% if f.delta != 0 %}<span style="color: #ffff00; font-size: 8px;">({% if f.delta > 0 %}+{% endif %}{{ "%.2f"|format(f.delta) }})</span>{% endif %}</span></div>
-                        {% endfor %}
-                    </div>
-                    <div class="block" style="flex: 0 0 200px;">
-                                                <div class="block-label">HYDROLOGY STATUS</div>
-                        {% for r in rivers %}
-                        <div style="font-size: 11px; margin-bottom: 8px; color: #008f11;">
-                            ● {{ r.station_name }}: {{ r.value }} {{ r.unit }}
-                            {% if r.delta != 0 %}
-                            <span style="color: #ffff00; font-size: 9px;">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span>
-                            {% endif %}
+                    <div class="box">
+                        <div class="box-label">SECURITY INTEGRITY</div>
+                        <div class="big-val" style="color: {% if score > 80 %}#00ff41{% elif score > 50 %}#ffff00{% else %}#ff3131{% endif %};">{{ score }}%</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div class="score-box">SSH FAILS: {{ tel.ssh_failure_count }}</div>
+                            <div class="score-box">ALERTS: {{ alerts|length }}</div>
                         </div>
-                        {% endfor %}
+                    </div>
+                    <div class="box">
+                        <div class="box-label">HYDROLOGY</div>
+                        {% for r in rivers %}<div class="stat-row"><span class="stat-label">{{ r.name[:20] }}</span><span>{{ r.val }} {{ r.unit }} ({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span></div>{% endfor %}
                     </div>
                 </div>
-
                 <div class="col">
-                    <div class="block" style="flex: 0 0 200px;">
-                        <div class="block-label">AIRSPACE DENSITY</div>
-                        <div class="big-metric">{{ m.planes }} <span style="font-size: 12px; color: #ffff00;">({% if m.planes_delta > 0 %}+{% endif %}{{ m.planes_delta }})</span></div>
-                        <div style="text-align: center; font-size: 10px; color: #008f11;">ACTIVE ADS-B PINGS</div>
+                    <div class="box">
+                        <div class="box-label">AI EXECUTIVE DISPATCH</div>
+                        <div class="ai-dispatch"><div class="ai-title">>> STRATEGIC THREATS</div><div class="ai-body">{{ ai[0] }}</div></div>
+                        <div class="ai-dispatch"><div class="ai-title">>> INFRASTRUCTURE</div><div class="ai-body">{{ ai[1] }}</div></div>
+                        <div class="ai-dispatch"><div class="ai-title">>> TACTICAL TECH</div><div class="ai-body">{{ ai[2] }}</div></div>
                     </div>
-                    <div class="block" style="flex: 1;">
-                        <div class="block-label">NETWORK & SOFTWARE TOPOLOGY</div>
-                        <div class="stat-row"><span class="stat-label">ACTIVE NODES</span><span class="stat-val">{{ m.devices }} ({% if m.devices_delta > 0 %}+{% endif %}{{ m.devices_delta }})</span></div>
-                        <div class="stat-row"><span class="stat-label">AUTH FAILS</span><span class="stat-val" style="color:#ff3131">{{ m.ssh }} ({% if m.ssh_delta > 0 %}+{% endif %}{{ m.ssh_delta }})</span></div>
-                        <div class="stat-row"><span class="stat-label">NET LATENCY</span><span class="stat-val">{{ m.latency }} ms ({% if m.latency_delta > 0 %}+{% endif %}{{ "%.1f"|format(m.latency_delta) }})</span></div>
-                        
-                        <div style="font-size: 10px; margin-top: 30px; color: #008f11;">SYSTEM SOFTWARE ARSENAL:</div>
-                        {% for s in sw %}
-                        <div class="stat-row"><span class="stat-label">{{ s.manager }}</span><span class="stat-val">{{ s.count }} PKGS {% if s.delta != 0 %}<span style="color: #ffff00; font-size: 8px;">({% if s.delta > 0 %}+{% endif %}{{ s.delta }})</span>{% endif %}</span></div>
-                        {% endfor %}
-                    </div>
-                    <div class="block" style="flex: 0 0 200px; border-color: #ff3131;">
-                        <div class="block-label" style="color: #ff3131; border-color: #ff3131;">CRITICAL THREAT LOG</div>
-                        {% for a in alerts %}
-                        <div class="alert-box">! [{{ a.domain }}] {{ a.message }}</div>
-                        {% else %}
-                        <div style="text-align: center; margin-top: 30px; color: #008f11; font-weight: bold;">NO ACTIVE SYSTEM THREATS</div>
-                        {% endfor %}
+                    <div class="box">
+                        <div class="box-label">STRATEGIC DATA TRENDS</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                            {% for cat, items in stats.items() %}
+                            <div>
+                                <div style="color: #000; background: #00ff41; padding: 2px 5px; font-weight: bold; margin-bottom: 10px; font-size: 9px;">{{ cat }}</div>
+                                {% for s in items %}<div class="stat-row" style="font-size: 9px;"><span class="stat-label">{{ s.label }}</span><span>{{ s.val }} {{ s.unit }}</span></div>{% endfor %}
+                            </div>
+                            {% endfor %}
+                        </div>
                     </div>
                 </div>
-
-                <div style="grid-column: 1 / span 2; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
-                    <div class="block" style="border-color: #ffff00; color: #ffff00; padding: 12px;">
-                        <div style="font-size: 9px; margin-bottom: 5px;">TACTICAL SHIFTS</div>
-                        {% for d in deltas %}<div style="font-size: 11px;">>> {{ d }}</div>{% endfor %}
+                <div class="col">
+                    <div class="box">
+                        <div class="box-label">AIRSPACE</div>
+                        <div class="big-val">{{ tel.aircraft_count }}</div>
                     </div>
-                    <div class="block" style="padding: 12px;">
-                        <div style="font-size: 9px; margin-bottom: 5px; color: #008f11;">SYSTEM HEALTH</div>
-                        <div style="font-size: 11px;">CORE UPTIME: 312H 14M<br>SENSORS: ACTIVE</div>
+                    <div class="box">
+                        <div class="box-label">SIGINT SPECTRUM</div>
+                        {% for f in rf[:12] %}<div class="stat-row"><span class="stat-label">{{ f.freq }} MHz</span><span>{{ f.db }} dB ({% if f.delta > 0 %}+{% endif %}{{ "%.2f"|format(f.delta) }})</span></div>{% endfor %}
                     </div>
-                    <div class="block" style="border-color: #58a6ff; color: #58a6ff; padding: 12px;">
-                        <div style="font-size: 9px; margin-bottom: 5px;">ENCRYPTION STATUS</div>
-                        <div style="font-size: 11px;">P25: READY | GMRS: ACTIVE</div>
+                    <div class="box" style="border-color: #ff3131;">
+                        <div class="box-label" style="color:#ff3131; border-color:#ff3131;">THREAT LOG</div>
+                        {% for a in alerts[:6] %}<div style="border-bottom: 1px solid #ff313133; padding: 5px 0; color: #ff3131; font-size: 10px;">[{{ a.severity }}] {{ a.message }}</div>{% endfor %}
                     </div>
                 </div>
             </div>
@@ -962,23 +880,21 @@ def report(
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         html = template.render(
             css=report_css,
-            m=m_curr,
+            tel=curr_tel,
+            score=int(sec_score),
             rivers=latest_rivers,
             rf=processed_rf,
-            sw=latest_sw,
-            deltas=deltas,
-            alerts=alerts,
             stats=categorized_stats,
+            ai=ai_results,
+            alerts=alerts,
             now=now_str,
-            version="0.32.0",
+            version="0.33.0",
         )
 
         fname = "tactical_intelligence_briefing.html"
         with open(fname, "w") as f:
             f.write(html)
-        console.print(
-            f"[bold green]Structured Tactical Dashboard forged: {fname}[/bold green]"
-        )
+        console.print(f"[bold green]AI Command Briefing forged: {fname}[/bold green]")
         if open_browser:
             import subprocess
 
