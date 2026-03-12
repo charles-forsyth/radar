@@ -168,7 +168,29 @@ class IntelligenceAgent:
         anomalies = []
         def extract_features(text: str) -> np.ndarray:
             t = text.lower()
-            return np.array([len(text), t.count("alert"), t.count("fire"), t.count("police"), t.count("emergency"), t.count("warning"), t.count("critical")])
+            
+            # Extract numerical metrics via regex
+            import re
+            lan_devices = 0
+            ssh_fails = 0
+            
+            lan_match = re.search(r"\*\*Local LAN Devices \(ARP\):\*\* (\d+)", text)
+            if lan_match: lan_devices = int(lan_match.group(1))
+                
+            ssh_match = re.search(r"\*\*Failed SSH Logins \(Auth\):\*\* (\d+)", text)
+            if ssh_match: ssh_fails = int(ssh_match.group(1))
+            
+            return np.array([
+                len(text), 
+                t.count("alert"), 
+                t.count("fire"), 
+                t.count("police"), 
+                t.count("emergency"), 
+                t.count("warning"), 
+                t.count("critical"),
+                lan_devices,
+                ssh_fails
+            ])
         historical_texts = [s for s in baseline_context.split("--- SITREP") if len(s.strip()) > 50]
         if len(historical_texts) < 5:
             if "critical" in current_sitrep.lower():
