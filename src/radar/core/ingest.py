@@ -474,29 +474,41 @@ class LocalSoftwareScanner:
         import subprocess
         import asyncio
 
-        async def run_count(cmd: str) -> str:
+        async def run_count(cmd: str, adjust: int = 0) -> str:
             try:
                 proc = await asyncio.create_subprocess_shell(
                     cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
                 )
                 stdout, _ = await proc.communicate()
                 if proc.returncode == 0:
-                    count = int(stdout.decode().strip())
-                    # Adjust for standard list headers
-                    if "pip" in cmd: count -= 2
-                    if "dpkg" in cmd: count -= 5
-                    if "micromamba" in cmd: count -= 4
-                    return str(count)
+                    val = stdout.decode().strip()
+                    if not val:
+                        return "0"
+                    count = int(val) - adjust
+                    return str(count) if count >= 0 else "0"
                 return "Error"
             except Exception:
                 return "Not Found"
 
-        # Gather package counts concurrently
-        dpkg_count, pip_count, uv_count, mm_count = await asyncio.gather(
-            run_count("dpkg -l | wc -l"),
-            run_count("/home/chuck/bin/pip list | wc -l"),
+        # Gather software and container counts concurrently
+        (
+            dpkg_count, 
+            pip_count, 
+            uv_count, 
+            mm_count,
+            docker_ps,
+            docker_img,
+            singularity_count,
+            gh_repos
+        ) = await asyncio.gather(
+            run_count("dpkg -l | wc -l", adjust=5),
+            run_count("/home/chuck/bin/pip list | wc -l", adjust=2),
             run_count("/home/chuck/.local/bin/uv pip list | wc -l"),
-            run_count("/home/chuck/bin/micromamba list | wc -l"),
+            run_count("/home/chuck/bin/micromamba list | wc -l", adjust=4),
+            run_count("docker ps -q | wc -l"),
+            run_count("docker images -q | wc -l"),
+            run_count("find ~ -maxdepth 3 -type f -name '*.sif' -o -name '*.simg' 2>/dev/null | wc -l"),
+            run_count("gh repo list --limit 1000 | wc -l")
         )
 
         return (
@@ -504,7 +516,11 @@ class LocalSoftwareScanner:
             f"- **APT (dpkg):** {dpkg_count} installed packages\n"
             f"- **pip (Global):** {pip_count} installed packages\n"
             f"- **uv (Local Env):** {uv_count} installed packages\n"
-            f"- **micromamba (Base):** {mm_count} installed packages"
+            f"- **micromamba (Base):** {mm_count} installed packages\n"
+            f"### CONTAINERS & REPOSITORIES\n"
+            f"- **Docker:** {docker_ps} running containers / {docker_img} total images\n"
+            f"- **Singularity/Apptainer:** {singularity_count} local .sif/.simg images\n"
+            f"- **GitHub Repositories:** {gh_repos} tracked remote repos"
         )
 
 
