@@ -491,8 +491,8 @@ async def save_ingest_to_db(signal, kg, intel: IntelligenceAgent):
                         exist_conn = (
                             await session.execute(
                                 select(Connection)
-                                .where(Connection.source_uuid == sid) # type: ignore
-                                .where(Connection.target_uuid == tid) # type: ignore
+                                .where(Connection.source_uuid == sid)  # type: ignore
+                                .where(Connection.target_uuid == tid)  # type: ignore
                                 .where(Connection.type == c.type)
                             )
                         ).scalar_one_or_none()
