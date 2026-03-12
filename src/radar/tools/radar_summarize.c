@@ -60,6 +60,8 @@ int main(int argc, char *argv[]) {
                 strstr(p, "font-family") == NULL &&
                 strstr(p, "LOCAL EXTRACTIVE") == NULL &&
                 strstr(p, "found no direct hits") == NULL &&
+                strncmp(p, "Autonomous Research", 19) != 0 &&
+                strncmp(p, "Target:", 7) != 0 &&
                 strlen(p) > 10) {
                 
                 if (strncmp(p, "Title:", 6) == 0) {
@@ -99,8 +101,8 @@ int main(int argc, char *argv[]) {
 
                     // We only want to print lines that are actually relevant to the query to avoid noise.
                     // But if it's the very first few lines of a document, they often contain the site header/title
-                    // which is good for context.
-                    if (relevant || (content_lines < 2 && line_count < 15)) {
+                    // which is good for context. Enforce a strict max of 3 lines per document to prevent spam.
+                    if ((relevant || content_lines == 0) && content_lines < 3) {
                         if (!current_title_printed && strlen(current_title) > 0) {
                             printf("\n📌 %s\n", current_title);
                             current_title_printed = 1;
