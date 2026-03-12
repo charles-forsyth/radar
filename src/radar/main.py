@@ -477,7 +477,10 @@ async def save_ingest_to_db(signal, kg, intel: IntelligenceAgent):
             # Categorize based on title keywords
             category = "GENERAL"
             t_lower = signal.title.lower()
-            if any(k in t_lower for k in ["price", "cost", "economic", "finance"]):
+            if any(
+                k in t_lower
+                for k in ["price", "cost", "economic", "finance", "route intel", "gas"]
+            ):
                 category = "FINANCE"
             elif any(k in t_lower for k in ["benchmark", "performance", "fps", "t/s"]):
                 category = "TECH_METRICS"
