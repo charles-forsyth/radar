@@ -99,6 +99,56 @@ class IntelligenceAgent:
         except Exception:
             return ""
 
+    def extract_stats(self, text: str) -> List[dict]:
+        """Heuristic-based numerical extraction from text."""
+        import re
+
+        stats = []
+        # 1. Currency (e.g., $4.50)
+        currency = re.findall(r"\$([0-9,]+\.?\d*)", text)
+        for val in currency:
+            try:
+                stats.append(
+                    {
+                        "label": "Price/Value",
+                        "value": float(val.replace(",", "")),
+                        "unit": "USD",
+                    }
+                )
+            except ValueError:
+                continue
+
+        # 2. Percentages (e.g., 85%)
+        pcts = re.findall(r"(\d+\.?\d*)%", text)
+        for val in pcts:
+            try:
+                stats.append({"label": "Percentage", "value": float(val), "unit": "%"})
+            except ValueError:
+                continue
+
+        # 3. Units
+        patterns = [
+            (r"(\d+,?\d*)\s*(?:acres|acre)", "Land Area", "Acres"),
+            (r"(\d+,?\d*)\s*(?:gallons|gal)", "Fuel Volume", "Gallons"),
+            (r"(\d+,?\d*)\s*(?:t/s|tokens/sec)", "Performance", "t/s"),
+            (r"(\d+,?\d*)\s*(?:beds|bed count)", "Medical Capacity", "Beds"),
+        ]
+        for pattern, label, unit in patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for val in matches:
+                try:
+                    stats.append(
+                        {
+                            "label": label,
+                            "value": float(val.replace(",", "")),
+                            "unit": unit,
+                        }
+                    )
+                except ValueError:
+                    continue
+
+        return stats
+
     async def search_signals(self, query: str, limit: int = 5) -> List[Signal]:
         from sqlalchemy import select
         import bm25s

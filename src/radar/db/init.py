@@ -15,6 +15,7 @@ from radar.db.models import (
     RiverLevel,
     RFPeak,
     SoftwareInventory,
+    Statistic,
 )
 
 
