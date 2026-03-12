@@ -778,9 +778,38 @@ def report(
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
-            # 6. Fetch Extracted Research Stats
-            stats_stmt = select(Statistic).order_by(desc(Statistic.timestamp)).limit(20)
-            research_stats = (await session.execute(stats_stmt)).scalars().all()
+            # 6. Fetch Extracted Research Stats (with deltas)
+            stats_stmt = select(Statistic).order_by(desc(Statistic.timestamp)).limit(60)
+            all_stats = (await session.execute(stats_stmt)).scalars().all()
+
+            # Map by label to find previous values
+            stats_map = {}
+            for s in all_stats:
+                key = (s.category, s.label)
+                if key not in stats_map:
+                    stats_map[key] = []
+                if len(stats_map[key]) < 2:
+                    stats_map[key].append(s)
+
+            # Group by category for the cool display
+            categorized_stats = {}
+            for key, items in stats_map.items():
+                cat, label = key
+                curr = items[0]
+                prev = items[1] if len(items) > 1 else None
+                s_delta = curr.value - prev.value if prev else 0.0
+
+                if cat not in categorized_stats:
+                    categorized_stats[cat] = []
+
+                categorized_stats[cat].append(
+                    {
+                        "label": label,
+                        "value": curr.value,
+                        "unit": curr.unit or "",
+                        "delta": s_delta,
+                    }
+                )
 
         # Prep deltas and formatted metrics
         m_curr = {
@@ -826,19 +855,27 @@ def report(
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap');
         body { background-color: #05070a; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; overflow-y: auto; }
-                .grid-container { display: grid; grid-template-columns: 320px 1fr 320px; grid-template-rows: 60px auto auto; gap: 15px; width: 100%; }
+        .grid-container { display: grid; grid-template-columns: 320px 1fr 320px; grid-template-rows: 60px auto auto; gap: 15px; width: 100%; }
         .header { grid-column: 1 / span 3; border: 1px solid #00ff41; display: flex; justify-content: space-between; align-items: center; padding: 10px 25px; background: #00ff4111; }
         .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.4rem; font-weight: bold; text-shadow: 0 0 10px #00ff41; }
         .block { border: 1px solid #00ff41; background: #080c12; padding: 20px; position: relative; min-height: 150px; }
         .block-label { position: absolute; top: -9px; left: 15px; background: #05070a; padding: 0 8px; color: #00ff41; font-weight: bold; font-size: 10px; border: 1px solid #00ff41; }
         .col { display: flex; flex-direction: column; gap: 15px; }
-        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #004111; padding: 6px 0; }
+        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #004111; padding: 8px 0; }
         .stat-label { color: #008f11; font-size: 9px; }
         .stat-val { font-weight: bold; }
         .big-metric { font-size: 3rem; font-weight: bold; text-align: center; margin: 15px 0; text-shadow: 0 0 20px #00ff41; }
         .alert-box { border: 1px solid #ff3131; background: rgba(248, 81, 73, 0.1); color: #ff3131; padding: 10px; margin-bottom: 8px; font-size: 10px; }
         .blink { animation: blink 1.5s infinite; }
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
+        
+        /* Cool Stats Styles */
+        .cat-section { margin-bottom: 25px; }
+        .cat-title { color: #000; background: #00ff41; padding: 4px 10px; display: inline-block; margin-bottom: 10px; font-weight: bold; font-size: 10px; box-shadow: 0 0 8px #00ff41; }
+        .stat-card { border: 1px solid #004111; background: #0a0f18; padding: 12px; margin-bottom: 8px; }
+        .trend-up { color: #ff3131; }
+        .trend-down { color: #39d353; }
+        .trend-stable { color: #ffff00; }
         """
 
         template = jinja2.Template("""
@@ -931,9 +968,9 @@ def report(
             sw=latest_sw,
             deltas=deltas,
             alerts=alerts,
-            stats=research_stats,
+            stats=categorized_stats,
             now=now_str,
-            version="0.30.0",
+            version="0.32.0",
         )
 
         fname = "tactical_intelligence_briefing.html"
