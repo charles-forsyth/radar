@@ -671,7 +671,21 @@ class ADSBScanner:
         d = await self.get_live_data()
         if "error" in d: return f"Error: {d['error']}"
         ac = d.get("aircraft", [])
-        return "\n".join([f"- Flight {x.get('flight','Unk').strip()} at {x.get('alt_baro',0)}ft" for x in ac]) if ac else "No aircraft."
+        
+        lines = []
+        for x in ac:
+            flight = x.get('flight','Unk').strip()
+            alt = x.get('alt_baro',0)
+            
+            # Extract coordinates if available
+            lat = x.get('lat')
+            lon = x.get('lon')
+            if lat is not None and lon is not None:
+                lines.append(f"- Flight {flight} at {alt}ft (Lat: {lat}, Lon: {lon})")
+            else:
+                lines.append(f"- Flight {flight} at {alt}ft")
+                
+        return "\n".join(lines) if lines else "No aircraft."
 
 
 class APRSStreamer:

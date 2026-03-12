@@ -345,7 +345,7 @@ def sync(
 
                 agent = TacticalAgent()
                 sitrep_text = await agent.generate_full_sitrep(
-                    previous_sitrep=prev_sitrep
+                    prev=prev_sitrep
                 )
 
                 # --- ANOMALY DETECTION ---
