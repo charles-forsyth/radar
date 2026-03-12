@@ -52,9 +52,9 @@ class IntelligenceAgent:
         async with async_session() as session:
             stmt = (
                 select(Signal)
-                .order_by(Signal.vector.l2_distance(query_vector))
+                .order_by(Signal.vector.l2_distance(query_vector))  # type: ignore
                 .limit(100)
-            )  # type: ignore
+            )
             results = await session.execute(stmt)
             signals = results.scalars().all()
 
