@@ -1,3 +1,4 @@
+import trafilatura
 import json
 import logging
 import subprocess
@@ -87,6 +88,16 @@ class IntelligenceAgent:
 
     async def get_batch_embeddings(self, texts: List[str]) -> List[List[float]]:
         return [await self.get_embedding(t) for t in texts]
+
+    def _clean_html(self, html: str) -> str:
+        """Use Trafilatura for high-precision content extraction."""
+        try:
+            result = trafilatura.extract(
+                html, include_comments=False, include_tables=True, no_fallback=False
+            )
+            return result if result else ""
+        except Exception:
+            return ""
 
     async def search_signals(self, query: str, limit: int = 5) -> List[Signal]:
         from sqlalchemy import select
@@ -391,7 +402,29 @@ class DeepResearchAgent:
                             url, wait_until="domcontentloaded", timeout=30000
                         )
                         await asyncio.sleep(3)
-                        content = await page.evaluate("() => document.body.innerText")
+                        # --- SMART CONTENT EXTRACTION ---
+                        html = await page.content()
+                        content = self.intel._clean_html(html)
+
+                        # Fallback to JS heuristic if Trafilatura fails
+                        if not content:
+                            content = await page.evaluate("""() => {
+                                const noiseSelectors = ['nav', 'footer', 'header', 'aside', 'script', 'style', '.ads', '.sidebar', '.menu', '.cookie'];
+                                noiseSelectors.forEach(s => document.querySelectorAll(s).forEach(el => el.remove()));
+                                let mainElement = document.body;
+                                const containers = document.querySelectorAll('article, main, .content, .post');
+                                if (containers.length > 0) {
+                                    let maxLen = 0;
+                                    containers.forEach(c => {
+                                        if (c.innerText.length > maxLen) {
+                                            maxLen = c.innerText.length;
+                                            mainElement = c;
+                                        }
+                                    });
+                                }
+                                return mainElement.innerText.split('\n').map(line => line.trim()).filter(line => line.length > 40).join('\n');
+                            }""")
+                        # ---------------------------------
                     if content:
                         combined_text += f"\n--- Source: {url} ---\n{content[:5000]}"
                 except Exception:
@@ -441,7 +474,7 @@ class BrowserIngestAgent:
                             rows.forEach(row => {
                                 const cells = row.querySelectorAll('td');
                                 if (cells.length > 3) {
-                                    const feedName = cells[1].innerText ? cells[1].innerText.trim().split('\\n').join(' - ') : "";
+                                    const feedName = cells[1].innerText ? cells[1].innerText.trim().split('\n').join(' - ') : "";
                                     const genre = cells[2].innerText ? cells[2].innerText.trim() : "";
                                     const listeners = cells[3].innerText ? cells[3].innerText.trim() : "";
                                     
@@ -461,9 +494,30 @@ class BrowserIngestAgent:
                             extracted_feeds
                         )
                     else:
-                        content = await page.evaluate("() => document.body.innerText")
+                        html = await page.content()
+                        content = self.intel._clean_html(html)
                 else:
-                    content = await page.evaluate("() => document.body.innerText")
+                    html = await page.content()
+                    content = self.intel._clean_html(html)
+
+                # Final generic JS fallback for both branches
+                if not content:
+                    content = await page.evaluate("""() => {
+                        const noiseSelectors = ['nav', 'footer', 'header', 'aside', 'script', 'style', '.ads', '.sidebar', '.menu', '.cookie'];
+                        noiseSelectors.forEach(s => document.querySelectorAll(s).forEach(el => el.remove()));
+                        let mainElement = document.body;
+                        const containers = document.querySelectorAll('article, main, .content, .post');
+                        if (containers.length > 0) {
+                            let maxLen = 0;
+                            containers.forEach(c => {
+                                if (c.innerText.length > maxLen) {
+                                    maxLen = c.innerText.length;
+                                    mainElement = c;
+                                }
+                            });
+                        }
+                        return mainElement.innerText.split('\n').map(line => line.trim()).filter(line => line.length > 40).join('\n');
+                    }""")
 
                 if (
                     len(content) < 500 or "map" in url.lower()
