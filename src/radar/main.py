@@ -616,6 +616,157 @@ def ingest(
 
 
 @app.command()
+def report(
+    open_browser: bool = typer.Option(
+        True, "--open", help="Open the report in browser."
+    ),
+):
+    """Generate professional offline HTML tactical and intelligence reports."""
+    import jinja2
+    from sqlalchemy import select, desc
+
+    async def _report():
+        console.print("[bold blue]Generating Tactical Dashboards...[/bold blue]")
+
+        async with async_session() as session:
+            # 1. Fetch Latest Tactical SITREP
+            sitrep_stmt = (
+                select(Signal)
+                .where(Signal.title.contains("SITREP"))
+                .order_by(desc(Signal.date))
+                .limit(1)
+            )
+            sitrep = (await session.execute(sitrep_stmt)).scalar_one_or_none()
+
+            # 2. Fetch Latest 10 Research Signals (Intelligence Ledger)
+            research_stmt = (
+                select(Signal)
+                .where(Signal.title.contains("Deep Research"))
+                .order_by(desc(Signal.date))
+                .limit(10)
+            )
+            research_signals = (await session.execute(research_stmt)).scalars().all()
+
+            # 3. Fetch Recent High-Priority Alerts
+            alert_stmt = (
+                select(TacticalAlert)
+                .where(TacticalAlert.severity.in_(["WARNING", "CRITICAL"]))
+                .order_by(desc(TacticalAlert.created_at))
+                .limit(5)
+            )
+            alerts = (await session.execute(alert_stmt)).scalars().all()
+
+        # Define a common CSS for tactical reports
+        tactical_css = """
+        body { background-color: #0b0e14; color: #d1d5db; font-family: 'JetBrains Mono', monospace; line-height: 1.6; padding: 40px; }
+        .container { max-width: 1000px; margin: auto; border: 1px solid #1f2937; padding: 30px; background: #111827; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        h1 { color: #10b981; border-bottom: 2px solid #065f46; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #3b82f6; margin-top: 30px; text-transform: uppercase; font-size: 1.2rem; border-left: 4px solid #3b82f6; padding-left: 15px; }
+        .alert { background: #7f1d1d; color: #fecaca; padding: 15px; border-radius: 4px; margin: 10px 0; border: 1px solid #f87171; }
+        .sitrep-box { white-space: pre-wrap; background: #1f2937; padding: 20px; border-radius: 4px; border-left: 4px solid #10b981; font-size: 0.9rem; }
+        .card { background: #1f2937; border: 1px solid #374151; padding: 15px; margin-bottom: 15px; border-radius: 4px; }
+        .card-title { font-weight: bold; color: #f3f4f6; margin-bottom: 5px; }
+        .footer { margin-top: 40px; font-size: 0.8rem; color: #6b7280; text-align: center; }
+        """
+
+        # --- TACTICAL DASHBOARD REPORT ---
+        dashboard_template = jinja2.Template("""
+        <html>
+        <head><style>{{ css }}</style><title>Tactical Dashboard</title></head>
+        <body>
+            <div class="container">
+                <h1>📡 SECTOR TACTICAL DASHBOARD</h1>
+                <p>Status for 1539 Button Hill Road Geofence (150mi)</p>
+                <p>Generated: {{ now }}</p>
+
+                {% if alerts %}
+                <h2>⚠️ ACTIVE TACTICAL ALERTS</h2>
+                {% for a in alerts %}
+                <div class="alert">
+                    <strong>[{{ a.severity }}] {{ a.domain }}</strong>: {{ a.message }}
+                </div>
+                {% endfor %}
+                {% endif %}
+
+                <h2>📊 CURRENT SECTOR SITREP</h2>
+                {% if sitrep %}
+                <div class="sitrep-box">{{ sitrep.content }}</div>
+                {% else %}
+                <p>No SITREP available.</p>
+                {% endif %}
+
+                <div class="footer">Local Sovereignty Intel - RADAR v{{ version }}</div>
+            </div>
+        </body>
+        </html>
+        """)
+
+        # --- INTELLIGENCE LEDGER REPORT ---
+        ledger_template = jinja2.Template("""
+        <html>
+        <head><style>{{ css }}</style><title>Intelligence Ledger</title></head>
+        <body>
+            <div class="container">
+                <h1>📋 INTELLIGENCE LEDGER</h1>
+                <p>Latest Research Extractions (Global & Regional)</p>
+                <p>Generated: {{ now }}</p>
+
+                <h2>🗞️ RESEARCH CHRONICLE</h2>
+                {% for s in research %}
+                <div class="card">
+                    <div class="card-title">{{ s.title }}</div>
+                    <div style="font-size: 0.8rem; color: #9ca3af; margin-bottom: 10px;">Source: {{ s.source }} | Date: {{ s.date }}</div>
+                    <div style="font-size: 0.9rem;">{{ s.content | truncate(500) }}</div>
+                </div>
+                {% endfor %}
+
+                <div class="footer">Local Sovereignty Intel - RADAR v{{ version }}</div>
+            </div>
+        </body>
+        </html>
+        """)
+
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        version_str = "0.19.0"
+
+        # Save Tactical Dashboard
+        dashboard_html = dashboard_template.render(
+            css=tactical_css,
+            sitrep=sitrep,
+            alerts=alerts,
+            now=now_str,
+            version=version_str,
+        )
+        with open("tactical_dashboard.html", "w") as f:
+            f.write(dashboard_html)
+
+        # Save Intelligence Ledger
+        ledger_html = ledger_template.render(
+            css=tactical_css,
+            research=research_signals,
+            now=now_str,
+            version=version_str,
+        )
+        with open("intelligence_ledger.html", "w") as f:
+            f.write(ledger_html)
+
+        console.print("[bold green]Reports generated successfully:[/bold green]")
+        console.print("- tactical_dashboard.html")
+        console.print("- intelligence_ledger.html")
+
+        if open_browser:
+            import subprocess
+
+            try:
+                subprocess.run(["xdg-open", "tactical_dashboard.html"], check=False)
+                subprocess.run(["xdg-open", "intelligence_ledger.html"], check=False)
+            except Exception:
+                pass
+
+    asyncio.run(_report())
+
+
+@app.command()
 def map():
     """Generate an offline HTML map of extracted tactical coordinates."""
     import folium
