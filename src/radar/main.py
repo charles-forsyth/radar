@@ -10,9 +10,6 @@ from radar.core.ingest import (
     BrowserIngestAgent,
     IntelligenceAgent,
     DeepResearchAgent,
-    ADSBScanner,
-    APRSStreamer,
-    SectorScanner,
     TacticalAgent,
     RSSIngestAgent,
     TextIngestAgent,
@@ -630,6 +627,7 @@ def ingest(
 def dash():
     """Launch the Mission Control TUI Dashboard."""
     import os
+    from radar.config import settings
     os.environ["DB_URL"] = settings.DB_URL  # Ensure textual picks up the right DB
     from radar.ui.dashboard import RadarApp
     tui = RadarApp()
