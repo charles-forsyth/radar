@@ -24,17 +24,21 @@ class IntelligenceAgent:
         # Initialize the SentenceTransformer model once on startup
         import warnings
         import logging
+        import os
 
-        # Suppress FutureWarnings from tokenizers library and verbose logging from transformers
-        warnings.filterwarnings("ignore", category=FutureWarning)
-        logging.getLogger("transformers").setLevel(
-            logging.ERROR
-        )  # Suppress verbose transformers output
-        logging.getLogger("sentence_transformers").setLevel(
-            logging.ERROR
-        )  # Suppress even more
+        # Suppress ALL the noise
+        warnings.filterwarnings("ignore")
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+        logging.getLogger("transformers").setLevel(logging.ERROR)
+        logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
+        logging.getLogger("httpx").setLevel(logging.WARNING)
 
         from sentence_transformers import SentenceTransformer
+
+        # Disable tqdm progress bars during model load
+        from transformers.utils import logging as transformers_logging
+
+        transformers_logging.set_verbosity_error()
 
         self.embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
@@ -345,8 +349,8 @@ class IntelligenceAgent:
 
 
 class DeepResearchAgent:
-    def __init__(self):
-        self.intel = IntelligenceAgent()
+    def __init__(self, intel: Optional[IntelligenceAgent] = None):
+        self.intel = intel or IntelligenceAgent()
         self.sources = [
             "https://www.hpcwire.com/",
             "https://www.rtl-sdr.com/",
@@ -402,8 +406,8 @@ class DeepResearchAgent:
 
 
 class BrowserIngestAgent:
-    def __init__(self):
-        self.intel = IntelligenceAgent()
+    def __init__(self, intel: Optional[IntelligenceAgent] = None):
+        self.intel = intel or IntelligenceAgent()
 
     async def extract(self, url: str, instructions: str) -> str:
         from playwright.async_api import async_playwright
@@ -490,8 +494,8 @@ class BrowserIngestAgent:
 
 
 class WebIngestAgent:
-    def __init__(self):
-        self.intel = IntelligenceAgent()
+    def __init__(self, intel: Optional[IntelligenceAgent] = None):
+        self.intel = intel or IntelligenceAgent()
 
     async def fetch(self, url: str) -> str:
         return self.intel._fetch_url(url)
@@ -505,8 +509,8 @@ class WebIngestAgent:
 
 
 class TextIngestAgent:
-    def __init__(self):
-        self.intel = IntelligenceAgent()
+    def __init__(self, intel: Optional[IntelligenceAgent] = None):
+        self.intel = intel or IntelligenceAgent()
 
     async def ingest(self, text: str) -> Tuple[Signal, KnowledgeGraphExtraction]:
         signal, kg = await self.intel.parse(text)
@@ -514,8 +518,8 @@ class TextIngestAgent:
 
 
 class AudioIngestAgent:
-    def __init__(self):
-        self.intel = IntelligenceAgent()
+    def __init__(self, intel: Optional[IntelligenceAgent] = None):
+        self.intel = intel or IntelligenceAgent()
 
     async def ingest_stream(self, stream_url: str, duration_sec: int = 15) -> str:
         import os
@@ -659,9 +663,9 @@ class NewsWire:
 
 
 class RSSIngestAgent:
-    def __init__(self):
+    def __init__(self, intel: Optional[IntelligenceAgent] = None):
         self.wire = NewsWire()
-        self.intel = IntelligenceAgent()
+        self.intel = intel or IntelligenceAgent()
 
     async def sync_news(self) -> List[Tuple[Signal, KnowledgeGraphExtraction]]:
         res = []
@@ -711,8 +715,8 @@ class SectorScanner:
 
 
 class GridScanner:
-    def __init__(self):
-        self.browser = BrowserIngestAgent()
+    def __init__(self, intel: Optional[IntelligenceAgent] = None):
+        self.browser = BrowserIngestAgent(intel=intel)
 
     async def get_summary(self) -> str:
         import asyncio

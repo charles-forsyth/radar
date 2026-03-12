@@ -216,7 +216,7 @@ def sync(
                 if os.path.exists(targets):
                     with open(targets, "r") as f:
                         topics = [line.strip() for line in f if line.strip()]
-                    agent = DeepResearchAgent()
+                    agent = DeepResearchAgent(intel=shared_intel)
 
                     # Process topics concurrently with a Semaphore to prevent exploding memory
                     sem = asyncio.Semaphore(5)
@@ -241,7 +241,7 @@ def sync(
                 console.print(
                     "\n[bold blue]Starting Global News Ingestion...[/bold blue]"
                 )
-                rss_agent = RSSIngestAgent()
+                rss_agent = RSSIngestAgent(intel=shared_intel)
                 news_results = await rss_agent.sync_news()
                 for signal, kg in news_results:
                     # Direct ingestion logic to avoid shell overhead
@@ -293,7 +293,7 @@ def sync(
                         console.print(
                             "[bold blue]Starting Dynamic Browser Sweep...[/bold blue]"
                         )
-                        browser_agent = BrowserIngestAgent()
+                        browser_agent = BrowserIngestAgent(intel=shared_intel)
                         for target in dyn_targets:
                             parts = target.split("|", 1)
                             if len(parts) == 2:
@@ -527,7 +527,7 @@ async def run_ingest(
 ):
     import subprocess
 
-    agent = TextIngestAgent()
+    agent = TextIngestAgent(intel=shared_intel)
 
     async def _ingest():
         try:
