@@ -686,17 +686,61 @@ def report(
                     }
                 )
 
-            # 3. Fetch Latest RF Peaks
-            rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(10)
-            rf_peaks = (await session.execute(rf_stmt)).scalars().all()
+            # 3. Fetch Latest RF Peaks (and previous for delta)
+            rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(30)
+            rf_results = (await session.execute(rf_stmt)).scalars().all()
 
-            # 4. Fetch Software Arsenal
+            peak_map = {}
+            for r in rf_results:
+                f_key = round(r.frequency_mhz, 1)
+                if f_key not in peak_map:
+                    peak_map[f_key] = []
+                if len(peak_map[f_key]) < 2:
+                    peak_map[f_key].append(r)
+
+            processed_rf = []
+            for f_key, items in peak_map.items():
+                curr = items[0]
+                prev = items[1] if len(items) > 1 else None
+                p_delta = curr.power_db - prev.power_db if prev else 0.0
+                processed_rf.append(
+                    {
+                        "frequency_mhz": curr.frequency_mhz,
+                        "power_db": curr.power_db,
+                        "delta": p_delta,
+                    }
+                )
+            processed_rf.sort(key=lambda x: x["power_db"], reverse=True)
+            processed_rf = processed_rf[:10]
+
+            # 4. Fetch Software Arsenal (with deltas)
             sw_stmt = (
                 select(SoftwareInventory)
                 .order_by(desc(SoftwareInventory.timestamp))
-                .limit(4)
+                .limit(20)
             )
-            sw_inv = (await session.execute(sw_stmt)).scalars().all()
+            sw_results = (await session.execute(sw_stmt)).scalars().all()
+
+            sw_map = {}
+            for s in sw_results:
+                if s.manager not in sw_map:
+                    sw_map[s.manager] = []
+                if len(sw_map[s.manager]) < 2:
+                    sw_map[s.manager].append(s)
+
+            latest_sw = []
+            for manager, items in sw_map.items():
+                curr = items[0]
+                prev = items[1] if len(items) > 1 else None
+                count_delta = curr.package_count - prev.package_count if prev else 0
+                latest_sw.append(
+                    {
+                        "manager": manager.upper(),
+                        "count": curr.package_count,
+                        "delta": count_delta,
+                    }
+                )
+            latest_sw.sort(key=lambda x: x["manager"])
 
             # 5. Fetch Alerts
             alert_stmt = (
@@ -704,7 +748,35 @@ def report(
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
-        # Prep deltas
+        # Prep deltas and formatted metrics
+        m_curr = {
+            "temp": curr_tel.temp_f if curr_tel else 0.0,
+            "temp_delta": (curr_tel.temp_f - prev_tel.temp_f)
+            if curr_tel and prev_tel and curr_tel.temp_f and prev_tel.temp_f
+            else 0.0,
+            "planes": curr_tel.aircraft_count if curr_tel else 0,
+            "planes_delta": (curr_tel.aircraft_count - prev_tel.aircraft_count)
+            if curr_tel and prev_tel
+            else 0,
+            "devices": curr_tel.lan_device_count if curr_tel else 0,
+            "devices_delta": (curr_tel.lan_device_count - prev_tel.lan_device_count)
+            if curr_tel and prev_tel
+            else 0,
+            "ssh": curr_tel.ssh_failure_count if curr_tel else 0,
+            "ssh_delta": (curr_tel.ssh_failure_count - prev_tel.ssh_failure_count)
+            if curr_tel and prev_tel
+            else 0,
+            "latency": curr_tel.internet_latency_ms if curr_tel else 0.0,
+            "latency_delta": (
+                curr_tel.internet_latency_ms - prev_tel.internet_latency_ms
+            )
+            if curr_tel
+            and prev_tel
+            and curr_tel.internet_latency_ms
+            and prev_tel.internet_latency_ms
+            else 0.0,
+        }
+
         deltas = []
         if curr_tel and prev_tel:
             if curr_tel.lan_device_count != prev_tel.lan_device_count:
@@ -748,13 +820,13 @@ def report(
                 <div class="col">
                     <div class="block" style="flex: 0 0 200px;">
                         <div class="block-label">ATMOSPHERICS</div>
-                        <div class="big-metric">{{ t.temp_f }}°F</div>
+                        <div class="big-metric">{{ m.temp }}°F <span style="font-size: 12px; color: #ffff00;">({% if m.temp_delta > 0 %}+{% endif %}{{ "%.1f"|format(m.temp_delta) }})</span></div>
                         <div style="text-align: center; font-size: 10px; color: #008f11;">STRUCTURED SENSOR DATA</div>
                     </div>
                     <div class="block" style="flex: 1;">
                         <div class="block-label">SIGINT SPECTRUM PEAKS</div>
                         {% for f in rf %}
-                        <div class="stat-row"><span class="stat-label">SIGNAL</span><span class="stat-val">{{ f.frequency_mhz }} MHz ({{ f.power_db }} dB)</span></div>
+                        <div class="stat-row"><span class="stat-label">SIGNAL</span><span class="stat-val">{{ f.frequency_mhz }} MHz ({{ f.power_db }} dB) {% if f.delta != 0 %}<span style="color: #ffff00; font-size: 8px;">({% if f.delta > 0 %}+{% endif %}{{ "%.2f"|format(f.delta) }})</span>{% endif %}</span></div>
                         {% endfor %}
                     </div>
                     <div class="block" style="flex: 0 0 200px;">
@@ -773,18 +845,18 @@ def report(
                 <div class="col">
                     <div class="block" style="flex: 0 0 200px;">
                         <div class="block-label">AIRSPACE DENSITY</div>
-                        <div class="big-metric">{{ t.aircraft_count }}</div>
+                        <div class="big-metric">{{ m.planes }} <span style="font-size: 12px; color: #ffff00;">({% if m.planes_delta > 0 %}+{% endif %}{{ m.planes_delta }})</span></div>
                         <div style="text-align: center; font-size: 10px; color: #008f11;">ACTIVE ADS-B PINGS</div>
                     </div>
                     <div class="block" style="flex: 1;">
                         <div class="block-label">NETWORK & SOFTWARE TOPOLOGY</div>
-                        <div class="stat-row"><span class="stat-label">ACTIVE NODES</span><span class="stat-val">{{ t.lan_device_count }}</span></div>
-                        <div class="stat-row"><span class="stat-label">AUTH FAILS</span><span class="stat-val" style="color:#ff3131">{{ t.ssh_failure_count }}</span></div>
-                        <div class="stat-row"><span class="stat-label">NET LATENCY</span><span class="stat-val">{{ t.internet_latency_ms }} ms</span></div>
+                        <div class="stat-row"><span class="stat-label">ACTIVE NODES</span><span class="stat-val">{{ m.devices }} ({% if m.devices_delta > 0 %}+{% endif %}{{ m.devices_delta }})</span></div>
+                        <div class="stat-row"><span class="stat-label">AUTH FAILS</span><span class="stat-val" style="color:#ff3131">{{ m.ssh }} ({% if m.ssh_delta > 0 %}+{% endif %}{{ m.ssh_delta }})</span></div>
+                        <div class="stat-row"><span class="stat-label">NET LATENCY</span><span class="stat-val">{{ m.latency }} ms ({% if m.latency_delta > 0 %}+{% endif %}{{ "%.1f"|format(m.latency_delta) }})</span></div>
                         
                         <div style="font-size: 10px; margin-top: 30px; color: #008f11;">SYSTEM SOFTWARE ARSENAL:</div>
                         {% for s in sw %}
-                        <div class="stat-row"><span class="stat-label">{{ s.manager.upper() }}</span><span class="stat-val">{{ s.package_count }} PKGS</span></div>
+                        <div class="stat-row"><span class="stat-label">{{ s.manager }}</span><span class="stat-val">{{ s.count }} PKGS {% if s.delta != 0 %}<span style="color: #ffff00; font-size: 8px;">({% if s.delta > 0 %}+{% endif %}{{ s.delta }})</span>{% endif %}</span></div>
                         {% endfor %}
                     </div>
                     <div class="block" style="flex: 0 0 200px; border-color: #ff3131;">
@@ -819,14 +891,14 @@ def report(
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         html = template.render(
             css=report_css,
-            t=curr_tel,
+            m=m_curr,
             rivers=latest_rivers,
-            rf=rf_peaks,
-            sw=sw_inv,
+            rf=processed_rf,
+            sw=latest_sw,
             deltas=deltas,
             alerts=alerts,
             now=now_str,
-            version="0.27.1",
+            version="0.29.0",
         )
 
         fname = "tactical_intelligence_briefing.html"
