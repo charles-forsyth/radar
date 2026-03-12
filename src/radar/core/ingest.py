@@ -70,6 +70,13 @@ class IntelligenceAgent:
             adjusted_scores = []
 
             for i, idx in enumerate(doc_indices[0]):
+                base_score = scores[0][i]
+                
+                # Filter out completely irrelevant documents or very weak matches
+                # In BM25, scores < 1.0 usually mean a very weak single-word hit on a common stop-ish word
+                if base_score < 1.0:
+                    continue
+                    
                 sig = unique_signals[int(idx)]
                 # Ensure timezone awareness for subtraction
                 sig_date = sig.date.replace(tzinfo=timezone.utc) if sig.date.tzinfo is None else sig.date
@@ -82,7 +89,7 @@ class IntelligenceAgent:
                 # And check if the query specifically asks for 'tactical'
                 is_tactical = 10.0 if ("TACTICAL SITREP" in sig.title.upper() and "tactical" in query.lower()) else 1.0
 
-                final_score = scores[0][i] * decay * is_tactical
+                final_score = base_score * decay * is_tactical
                 adjusted_scores.append((final_score, sig))
 
             # Sort by new adjusted score
