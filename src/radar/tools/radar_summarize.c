@@ -83,26 +83,30 @@ int main(int argc, char *argv[]) {
                     current_title_printed = 0;
                     content_lines = 0;
                 } else {
-                    char lower_p[MAX_BUFFER];
-                    strncpy(lower_p, p, MAX_BUFFER);
-                    to_lowercase(lower_p);
-
-                    int relevant = 0;
-                    if (word_count > 0) {
-                        for (int w = 0; w < word_count; w++) {
-                            if (strstr(lower_p, words[w]) != NULL) {
-                                relevant = 1;
+                    // Since the Python BM25 engine already ranked the documents for relevance, 
+                    // we just need to extract the 3 best lines from each document.
+                    if (content_lines < 3) {
+                        
+                        // Check if the string contains a digit
+                        int has_digit = 0;
+                        for (int i = 0; p[i]; i++) {
+                            if (isdigit(p[i])) {
+                                has_digit = 1;
                                 break;
                             }
                         }
-                    } else {
-                        relevant = 1; 
-                    }
 
-                    // We only want to print lines that are actually relevant to the query to avoid noise.
-                    // But if it's the very first few lines of a document, they often contain the site header/title
-                    // which is good for context. Enforce a strict max of 3 lines per document to prevent spam.
-                    if ((relevant || content_lines == 0) && content_lines < 3) {
+                        // Skip printing lines that are just short markdown headers, 
+                        // UNLESS they contain numbers (like flight altitudes)
+                        if (strlen(p) < 40 && (p[0] == '#' || p[0] == '*' || p[0] == '-') && !has_digit) {
+                            continue;
+                        }
+
+                        // Skip generic fluff lines
+                        if (strlen(p) < 60 && !has_digit) {
+                            continue;
+                        }
+
                         if (!current_title_printed && strlen(current_title) > 0) {
                             printf("\n📌 %s\n", current_title);
                             current_title_printed = 1;
