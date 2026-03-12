@@ -621,29 +621,34 @@ def report(
         True, "--open", help="Open the report in browser."
     ),
 ):
-    """Generate professional offline HTML tactical and intelligence reports."""
+    """Generate professional analytical intelligence reports with deltas and cleaned insights."""
     import jinja2
     from sqlalchemy import select, desc
+    import re
 
     async def _report():
-        console.print("[bold blue]Generating Tactical Dashboards...[/bold blue]")
+        console.print(
+            "[bold blue]Synthesizing Analytical Intelligence Reports...[/bold blue]"
+        )
 
         async with async_session() as session:
-            # 1. Fetch Latest Tactical SITREP
+            # 1. Fetch Last TWO Tactical SITREPs for Delta Analysis
             sitrep_stmt = (
                 select(Signal)
                 .where(Signal.title.contains("SITREP"))
                 .order_by(desc(Signal.date))
-                .limit(1)
+                .limit(2)
             )
-            sitrep = (await session.execute(sitrep_stmt)).scalar_one_or_none()
+            sitreps = (await session.execute(sitrep_stmt)).scalars().all()
+            current_sitrep = sitreps[0] if len(sitreps) > 0 else None
+            prev_sitrep = sitreps[1] if len(sitreps) > 1 else None
 
-            # 2. Fetch Latest 10 Research Signals (Intelligence Ledger)
+            # 2. Fetch Latest 15 Research Signals
             research_stmt = (
                 select(Signal)
                 .where(Signal.title.contains("Deep Research"))
                 .order_by(desc(Signal.date))
-                .limit(10)
+                .limit(15)
             )
             research_signals = (await session.execute(research_stmt)).scalars().all()
 
@@ -652,114 +657,179 @@ def report(
                 select(TacticalAlert)
                 .where(TacticalAlert.severity.in_(["WARNING", "CRITICAL"]))
                 .order_by(desc(TacticalAlert.created_at))
-                .limit(5)
+                .limit(10)
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
-        # Define a common CSS for tactical reports
-        tactical_css = """
-        body { background-color: #0b0e14; color: #d1d5db; font-family: 'JetBrains Mono', monospace; line-height: 1.6; padding: 40px; }
-        .container { max-width: 1000px; margin: auto; border: 1px solid #1f2937; padding: 30px; background: #111827; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-        h1 { color: #10b981; border-bottom: 2px solid #065f46; padding-bottom: 10px; margin-top: 0; }
-        h2 { color: #3b82f6; margin-top: 30px; text-transform: uppercase; font-size: 1.2rem; border-left: 4px solid #3b82f6; padding-left: 15px; }
-        .alert { background: #7f1d1d; color: #fecaca; padding: 15px; border-radius: 4px; margin: 10px 0; border: 1px solid #f87171; }
-        .sitrep-box { white-space: pre-wrap; background: #1f2937; padding: 20px; border-radius: 4px; border-left: 4px solid #10b981; font-size: 0.9rem; }
-        .card { background: #1f2937; border: 1px solid #374151; padding: 15px; margin-bottom: 15px; border-radius: 4px; }
-        .card-title { font-weight: bold; color: #f3f4f6; margin-bottom: 5px; }
-        .footer { margin-top: 40px; font-size: 0.8rem; color: #6b7280; text-align: center; }
+        # --- DATA CLEANUP & ANALYSIS HELPERS ---
+        def clean_research(text):
+            text = re.sub(
+                r"Autonomous Research Report for:.*?\n", "", text, flags=re.IGNORECASE
+            )
+            text = re.sub(r"🎯.*?\n", "", text)
+            text = re.sub(r"Question:.*?\n", "", text, flags=re.IGNORECASE)
+            text = re.sub(r"Target:.*?\n", "", text, flags=re.IGNORECASE)
+            text = re.sub(r"📌 http.*?\n", "", text)
+            return text.strip()
+
+        def parse_sitrep_metrics(content):
+            metrics = {}
+            temp = re.search(r"(\d+\.\d+)°F", content)
+            if temp:
+                metrics["temp"] = float(temp.group(1))
+            devices = re.search(r"Local LAN Devices \(ARP\):\*\* (\d+)", content)
+            if devices:
+                metrics["devices"] = int(devices.group(1))
+            planes = len(re.findall(r"Flight ", content))
+            metrics["planes"] = planes
+            return metrics
+
+        # --- DELTA CALCULATION ---
+        deltas = []
+        if current_sitrep and prev_sitrep:
+            c = parse_sitrep_metrics(current_sitrep.content)
+            p = parse_sitrep_metrics(prev_sitrep.content)
+            if "temp" in c and "temp" in p:
+                diff = c["temp"] - p["temp"]
+                if abs(diff) > 0.5:
+                    deltas.append(
+                        f"Temperature {'rose' if diff > 0 else 'dropped'} by {abs(diff):.1f}°F since last sweep."
+                    )
+            if "devices" in c and "devices" in p:
+                diff = c["devices"] - p["devices"]
+                if diff != 0:
+                    deltas.append(
+                        f"LAN Activity: {'+' if diff > 0 else ''}{diff} devices detected on subnet."
+                    )
+            if "planes" in c and "planes" in p:
+                diff = c["planes"] - p["planes"]
+                if abs(diff) > 2:
+                    deltas.append(
+                        f"Airspace Density: {'Increased' if diff > 0 else 'Decreased'} by {abs(diff)} aircraft."
+                    )
+
+        # --- CATEGORIZATION ---
+        categories = {
+            "Cyber & Tactical Tech": [],
+            "Regional Infrastructure": [],
+            "Survival & Sustainability": [],
+            "Global Intelligence": [],
+        }
+        for s in research_signals:
+            text_cleaned = clean_research(s.content)
+            if any(
+                k in s.title.lower()
+                for k in ["cyber", "phishing", "sdr", "radio", "p25", "encryption"]
+            ):
+                categories["Cyber & Tactical Tech"].append(
+                    {
+                        "title": s.title.replace("Deep Research - ", ""),
+                        "content": text_cleaned,
+                    }
+                )
+            elif any(
+                k in s.title.lower()
+                for k in ["tioga", "pema", "river", "flood", "emergency", "monitoring"]
+            ):
+                categories["Regional Infrastructure"].append(
+                    {
+                        "title": s.title.replace("Deep Research - ", ""),
+                        "content": text_cleaned,
+                    }
+                )
+            elif any(
+                k in s.title.lower()
+                for k in ["foraging", "survival", "woodstove", "battery", "off-grid"]
+            ):
+                categories["Survival & Sustainability"].append(
+                    {
+                        "title": s.title.replace("Deep Research - ", ""),
+                        "content": text_cleaned,
+                    }
+                )
+            else:
+                categories["Global Intelligence"].append(
+                    {
+                        "title": s.title.replace("Deep Research - ", ""),
+                        "content": text_cleaned,
+                    }
+                )
+
+        report_css = """
+        body { background-color: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.5; margin: 0; padding: 0; }
+        .sidebar { width: 280px; position: fixed; height: 100%; background: #161b22; border-right: 1px solid #30363d; padding: 25px; overflow-y: auto; }
+        .main-content { margin-left: 330px; padding: 40px; max-width: 900px; }
+        h1 { color: #58a6ff; font-size: 1.5rem; border-bottom: 1px solid #30363d; padding-bottom: 10px; margin-bottom: 20px; }
+        h2 { color: #79c0ff; font-size: 1.1rem; margin-top: 30px; border-left: 3px solid #238636; padding-left: 10px; }
+        .metric-card { background: #0d1117; border: 1px solid #30363d; padding: 15px; border-radius: 6px; margin-bottom: 10px; font-size: 0.85rem; }
+        .metric-val { font-size: 1.2rem; font-weight: bold; color: #39d353; }
+        .delta-item { color: #f2cc60; font-size: 0.85rem; font-style: italic; margin-bottom: 5px; border-bottom: 1px dashed #30363d; padding-bottom: 5px; }
+        .insight-card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 20px; margin-bottom: 20px; }
+        .insight-title { font-weight: bold; color: #f0f6fc; margin-bottom: 8px; font-size: 1rem; }
+        .insight-text { font-size: 0.9rem; color: #8b949e; white-space: pre-wrap; }
+        .alert-urgent { border: 1px solid #f85149; background: rgba(248, 81, 73, 0.1); color: #f85149; padding: 10px; border-radius: 6px; margin-bottom: 10px; font-size: 0.8rem; }
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; background: #21262d; border: 1px solid #30363d; color: #8b949e; margin-bottom: 10px; }
         """
 
-        # --- TACTICAL DASHBOARD REPORT ---
-        dashboard_template = jinja2.Template("""
+        template = jinja2.Template("""
         <html>
-        <head><style>{{ css }}</style><title>Tactical Dashboard</title></head>
+        <head><style>{{ css }}</style><title>Analytical Intelligence Briefing</title></head>
         <body>
-            <div class="container">
-                <h1>📡 SECTOR TACTICAL DASHBOARD</h1>
-                <p>Status for 1539 Button Hill Road Geofence (150mi)</p>
-                <p>Generated: {{ now }}</p>
-
-                {% if alerts %}
-                <h2>⚠️ ACTIVE TACTICAL ALERTS</h2>
-                {% for a in alerts %}
-                <div class="alert">
-                    <strong>[{{ a.severity }}] {{ a.domain }}</strong>: {{ a.message }}
-                </div>
-                {% endfor %}
-                {% endif %}
-
-                <h2>📊 CURRENT SECTOR SITREP</h2>
-                {% if sitrep %}
-                <div class="sitrep-box">{{ sitrep.content }}</div>
-                {% else %}
-                <p>No SITREP available.</p>
-                {% endif %}
-
-                <div class="footer">Local Sovereignty Intel - RADAR v{{ version }}</div>
+            <div class="sidebar">
+                <h1>📡 TACTICAL HUD</h1>
+                <div class="metric-card"><div>AIRSPACE DENSITY</div><div class="metric-val">{{ metrics.planes }} Aircraft</div></div>
+                <div class="metric-card"><div>LOCAL SENSORS</div><div class="metric-val">{{ metrics.temp }}°F</div></div>
+                <div class="metric-card"><div>LAN SECURITY</div><div class="metric-val">{{ metrics.devices }} Devices</div></div>
+                <h2>📈 TREND ANALYSIS</h2>
+                {% for d in deltas %}<div class="delta-item">● {{ d }}</div>{% else %}<div class="delta-item">No significant deltas detected.</div>{% endfor %}
+                <h2>⚠️ RECENT ALERTS</h2>
+                {% for a in alerts %}<div class="alert-urgent"><strong>{{ a.domain }}</strong>: {{ a.message }}</div>{% endfor %}
             </div>
-        </body>
-        </html>
-        """)
-
-        # --- INTELLIGENCE LEDGER REPORT ---
-        ledger_template = jinja2.Template("""
-        <html>
-        <head><style>{{ css }}</style><title>Intelligence Ledger</title></head>
-        <body>
-            <div class="container">
-                <h1>📋 INTELLIGENCE LEDGER</h1>
-                <p>Latest Research Extractions (Global & Regional)</p>
-                <p>Generated: {{ now }}</p>
-
-                <h2>🗞️ RESEARCH CHRONICLE</h2>
-                {% for s in research %}
-                <div class="card">
-                    <div class="card-title">{{ s.title }}</div>
-                    <div style="font-size: 0.8rem; color: #9ca3af; margin-bottom: 10px;">Source: {{ s.source }} | Date: {{ s.date }}</div>
-                    <div style="font-size: 0.9rem;">{{ s.content | truncate(500) }}</div>
+            <div class="main-content">
+                <h1>📋 INTELLIGENCE SUMMARY</h1>
+                <p style="color: #8b949e;">Sovereign Analysis for 1539 Button Hill Road Sector | {{ now }}</p>
+                {% for cat_name, items in categories.items %}{% if items %}
+                <h2>{{ cat_name }}</h2>
+                {% for item in items %}
+                <div class="insight-card">
+                    <div class="tag">CLEANED EXTRACTION</div>
+                    <div class="insight-title">{{ item.title }}</div>
+                    <div class="insight-text">{{ item.content }}</div>
                 </div>
-                {% endfor %}
-
-                <div class="footer">Local Sovereignty Intel - RADAR v{{ version }}</div>
+                {% endfor %}{% endif %}{% endfor %}
+                <div style="margin-top: 50px; font-size: 0.7rem; color: #484f58; text-align: center;">Local In-Place Intelligence (LIPI) | RADAR v{{ version }} | 100% Offline</div>
             </div>
         </body>
         </html>
         """)
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        version_str = "0.19.0"
-
-        # Save Tactical Dashboard
-        dashboard_html = dashboard_template.render(
-            css=tactical_css,
-            sitrep=sitrep,
+        version_str = "0.20.0"
+        current_metrics = (
+            parse_sitrep_metrics(current_sitrep.content)
+            if current_sitrep
+            else {"planes": 0, "temp": 0, "devices": 0}
+        )
+        html = template.render(
+            css=report_css,
+            metrics=current_metrics,
+            deltas=deltas,
             alerts=alerts,
+            categories=categories,
             now=now_str,
             version=version_str,
         )
-        with open("tactical_dashboard.html", "w") as f:
-            f.write(dashboard_html)
-
-        # Save Intelligence Ledger
-        ledger_html = ledger_template.render(
-            css=tactical_css,
-            research=research_signals,
-            now=now_str,
-            version=version_str,
+        report_file = "radar_intelligence_briefing.html"
+        with open(report_file, "w") as f:
+            f.write(html)
+        console.print(
+            f"[bold green]Analytical Briefing generated at: {report_file}[/bold green]"
         )
-        with open("intelligence_ledger.html", "w") as f:
-            f.write(ledger_html)
-
-        console.print("[bold green]Reports generated successfully:[/bold green]")
-        console.print("- tactical_dashboard.html")
-        console.print("- intelligence_ledger.html")
-
         if open_browser:
             import subprocess
 
             try:
-                subprocess.run(["xdg-open", "tactical_dashboard.html"], check=False)
-                subprocess.run(["xdg-open", "intelligence_ledger.html"], check=False)
+                subprocess.run(["xdg-open", report_file], check=False)
             except Exception:
                 pass
 
