@@ -208,15 +208,23 @@ def sync(
                     with open(targets, "r") as f:
                         topics = [line.strip() for line in f if line.strip()]
                     agent = DeepResearchAgent()
-                    for topic in topics:
-                        console.print(f"[cyan]Researching:[/cyan] {topic}")
-                        try:
-                            text = await agent.research(topic)
-                            await run_ingest(
-                                f"Title: Deep Research - {topic}\n\n{text}", voice
-                            )
-                        except Exception as e:
-                            console.print(f"[red]Error {topic}:[/red] {e}")
+                    
+                    # Process topics concurrently with a Semaphore to prevent exploding memory
+                    sem = asyncio.Semaphore(5)
+                    
+                    async def process_topic(topic):
+                        async with sem:
+                            console.print(f"[cyan]Researching:[/cyan] {topic}")
+                            try:
+                                text = await agent.research(topic)
+                                await run_ingest(
+                                    f"Title: Deep Research - {topic}\n\n{text}", voice
+                                )
+                            except Exception as e:
+                                console.print(f"[red]Error {topic}:[/red] {e}")
+
+                    tasks = [process_topic(t) for t in topics]
+                    await asyncio.gather(*tasks)
 
                 # 2. Automated News Wire Ingestion
                 console.print(
