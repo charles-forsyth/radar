@@ -673,8 +673,8 @@ def map():
 
     async def _map():
         console.print("[bold blue]Generating Offline Tactical Map...[/bold blue]")
-        # Base map centered exactly on Tioga, PA (1539 Button Hill Road area)
-        tioga_coords = [41.9087, -77.1350]
+        # Base map centered exactly on 1539 Button Hill Road, Tioga, PA 16946
+        tioga_coords = [41.9168, -77.1042]
         m = folium.Map(location=tioga_coords, zoom_start=7, tiles="CartoDB positron")
 
         # Add the 150-mile strategic sector geofence (150 miles = 241,401 meters)
@@ -689,7 +689,7 @@ def map():
         ).add_to(m)
 
         # Add a precise home pin
-        folium.Marker(tioga_coords, popup="Home Base (Tioga, PA)", icon=folium.Icon(color="green", icon="home")).add_to(m)
+        folium.Marker(tioga_coords, popup="1539 Button Hill Road (Home Base)", icon=folium.Icon(color="green", icon="home")).add_to(m)
 
         async with async_session() as session:
             # 1. Look for ADS-B coordinates in SITREPs
