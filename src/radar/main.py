@@ -208,10 +208,10 @@ def sync(
                     with open(targets, "r") as f:
                         topics = [line.strip() for line in f if line.strip()]
                     agent = DeepResearchAgent()
-                    
+
                     # Process topics concurrently with a Semaphore to prevent exploding memory
                     sem = asyncio.Semaphore(5)
-                    
+
                     async def process_topic(topic):
                         async with sem:
                             console.print(f"[cyan]Researching:[/cyan] {topic}")
@@ -482,7 +482,14 @@ async def save_ingest_to_db(signal, kg):
                             },
                         )
                     )
-        await session.commit()
+
+            try:
+                await session.commit()
+            except Exception as e:
+                await session.rollback()
+                # Ignore duplicate key errors caused by concurrent entity creation
+                if "duplicate key value violates unique constraint" not in str(e):
+                    raise
 
 
 async def run_ingest(text: str, voice: bool):
@@ -554,7 +561,12 @@ async def run_ingest(text: str, voice: bool):
                                 },
                             )
                         )
-                await session.commit()
+                try:
+                    await session.commit()
+                except Exception as e:
+                    await session.rollback()
+                    if "duplicate key value violates unique constraint" not in str(e):
+                        raise
             console.print(f"[green]Ingested:[/green] {signal.title}")
             if voice:
                 subprocess.run(
@@ -636,8 +648,10 @@ def dash():
     """Launch the Mission Control TUI Dashboard."""
     import os
     from radar.config import settings
+
     os.environ["DB_URL"] = settings.DB_URL  # Ensure textual picks up the right DB
     from radar.ui.dashboard import RadarApp
+
     tui = RadarApp()
     tui.run()
 

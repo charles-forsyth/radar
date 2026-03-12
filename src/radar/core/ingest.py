@@ -100,11 +100,11 @@ class IntelligenceAgent:
     def _run_tool(self, tool: str, text: str) -> str:
         try:
             result = subprocess.run(
-                [tool], input=text, text=True, capture_output=True, check=True
+                [tool], input=text.encode('utf-8', errors='ignore'), capture_output=True, check=True
             )
-            return result.stdout.strip()
+            return result.stdout.decode('utf-8', errors='ignore').strip()
         except subprocess.CalledProcessError as e:
-            logger.error(f"Error running {tool}: {e.stderr}")
+            logger.error(f"Error running {tool}: {e.stderr.decode('utf-8', errors='ignore')}")
             return ""
 
     def _fetch_url(self, url: str) -> str:
