@@ -144,15 +144,53 @@ class IntelligenceAgent:
     async def detect_anomalies(
         self, current_sitrep: str, baseline_context: str
     ) -> List[dict]:
-        if "critical" in current_sitrep.lower():
-            return [
-                {
+        import numpy as np
+        from sklearn.ensemble import IsolationForest
+        
+        anomalies = []
+        
+        def extract_features(text: str) -> np.ndarray:
+            text_lower = text.lower()
+            return np.array([
+                len(text),
+                text_lower.count("alert"),
+                text_lower.count("fire"),
+                text_lower.count("police"),
+                text_lower.count("emergency"),
+                text_lower.count("warning"),
+                text_lower.count("critical")
+            ])
+
+        historical_texts = [s for s in baseline_context.split("--- SITREP") if len(s.strip()) > 50]
+        
+        if len(historical_texts) < 5:
+            if "critical" in current_sitrep.lower():
+                anomalies.append({
                     "domain": "GENERAL",
                     "severity": "CRITICAL",
-                    "message": "Local anomaly detected",
-                }
-            ]
-        return []
+                    "message": "Manual keyword match (insufficient baseline data for ML).",
+                })
+            return anomalies
+            
+        X_train = np.array([extract_features(t) for t in historical_texts])
+        X_current = extract_features(current_sitrep).reshape(1, -1)
+        
+        # Train Isolation Forest
+        clf = IsolationForest(random_state=42, contamination=0.1)
+        clf.fit(X_train)
+        
+        prediction = clf.predict(X_current)[0]
+        
+        if prediction == -1:
+            score = clf.score_samples(X_current)[0]
+            severity = "CRITICAL" if score < -0.6 else "WARNING"
+            anomalies.append({
+                "domain": "TACTICAL_ML", 
+                "severity": severity, 
+                "message": f"Statistical anomaly detected in SITREP flow based on deviation from last 7 days. Confidence Score: {score:.3f}"
+            })
+            
+        return anomalies
 
     async def chat(
         self, question: str, context_signals: List[Signal], history: List[dict] = []
@@ -748,6 +786,18 @@ class BrowserIngestAgent:
                 # Give complex SPA frameworks time to render API data
                 await asyncio.sleep(4)
                 
+                # Attempt to close any "Welcome" or "Cookie" overlays that might block the map
+                try:
+                    await page.get_by_role("button", name="Got it").click(timeout=3000)
+                    await asyncio.sleep(2) # wait for modal to fade
+                except Exception:
+                    try:
+                        # Fallback for other generic consent buttons
+                        await page.get_by_role("button", name=re.compile(r"accept|agree", re.IGNORECASE)).click(timeout=2000)
+                        await asyncio.sleep(1)
+                    except Exception:
+                        pass
+                
                 # Extract visible text directly using Playwright
                 content = await page.evaluate("() => document.body.innerText")
                 
@@ -762,8 +812,16 @@ class BrowserIngestAgent:
                     try:
                         import pytesseract
                         from PIL import Image
-                        ocr_text = pytesseract.image_to_string(Image.open(screenshot_path))
-                        content += f"\n--- OCR EXTRACTION ---\n{ocr_text}"
+                        
+                        # Check if user specifically wants numbers from a map
+                        if "number" in instructions.lower() or "count" in instructions.lower():
+                            # Restrict OCR to digits and standard punctuation to read map clusters
+                            custom_config = r'-c tessedit_char_whitelist=0123456789 --psm 11'
+                            ocr_text = pytesseract.image_to_string(Image.open(screenshot_path), config=custom_config)
+                            content += f"\n--- OCR NUMBER EXTRACTION ---\n{ocr_text}"
+                        else:
+                            ocr_text = pytesseract.image_to_string(Image.open(screenshot_path))
+                            content += f"\n--- OCR EXTRACTION ---\n{ocr_text}"
                     except Exception as ocr_err:
                         logger.error(f"Local OCR failed: {ocr_err}")
                     finally:
@@ -798,9 +856,50 @@ class WebIngestAgent:
         return signal, kg
 
 
-class TextIngestAgent:
+class AudioIngestAgent:
     def __init__(self):
         self.intel = IntelligenceAgent()
+
+    async def ingest_stream(self, stream_url: str, duration_sec: int = 15) -> str:
+        import os
+        import tempfile
+        import asyncio
+        from faster_whisper import WhisperModel
+        
+        logger.info(f"Intercepting {duration_sec}s of audio from: {stream_url}")
+        
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+            audio_path = tmp.name
+            
+        try:
+            # 1. Capture streaming audio using ffmpeg
+            process = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-y", "-i", stream_url, "-t", str(duration_sec), "-f", "mp3", audio_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await process.communicate()
+            
+            # 2. Load Local Whisper Model (CPU optimized, int8 quantization)
+            # tiny.en is ~39MB and runs incredibly fast locally
+            model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+            
+            # 3. Transcribe
+            segments, info = model.transcribe(audio_path, beam_size=1)
+            
+            transcription = " ".join([segment.text for segment in segments]).strip()
+            
+            if not transcription:
+                return "No clear voice traffic detected in this interval."
+                
+            return transcription
+            
+        except Exception as e:
+            logger.error(f"Local audio interception failed: {e}")
+            return f"Audio extraction error: {e}"
+        finally:
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
 
     async def ingest(self, text: str) -> Tuple[Signal, KnowledgeGraphExtraction]:
         logger.info("Ingesting raw text from stdin")
