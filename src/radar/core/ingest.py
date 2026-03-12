@@ -553,9 +553,62 @@ class WidebandSDRScanner:
         except Exception as e:
             return f"Wideband SDR Exception: {str(e)}"
 
+class NetworkAndSecurityScanner:
+    async def get_summary(self) -> str:
+        import subprocess
+        import asyncio
+        import re
+
+        async def run_cmd(cmd: str) -> str:
+            try:
+                proc = await asyncio.create_subprocess_shell(
+                    cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                stdout, _ = await proc.communicate()
+                return stdout.decode().strip() if proc.returncode == 0 else ""
+            except Exception:
+                return ""
+
+        # 1. ARP Scan (Local LAN devices)
+        arp_output = await run_cmd("sudo -n arp-scan -l")
+        device_count = 0
+        vendors = set()
+        if arp_output:
+            for line in arp_output.split("\n"):
+                if re.match(r"^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+", line):
+                    device_count += 1
+                    parts = line.split("\t")
+                    if len(parts) >= 3:
+                        vendor = parts[2].strip()
+                        if not vendor.startswith("(Unknown"):
+                            vendors.add(vendor.split(" ")[0].replace(",", ""))
+
+        # 2. Ping Latency (Internet Health)
+        ping_output = await run_cmd("ping -c 3 1.1.1.1")
+        latency = "Offline"
+        if ping_output:
+            match = re.search(r"min/avg/max/mdev = [\d\.]+/([\d\.]+)/", ping_output)
+            if match:
+                latency = f"{match.group(1)} ms"
+
+        # 3. Failed SSH/Intrusions
+        auth_output = await run_cmd("sudo -n grep 'Failed password' /var/log/auth.log | wc -l")
+        failed_logins = auth_output if auth_output else "0"
+
+        vendors_str = ", ".join(list(vendors)[:5]) if vendors else "None identified"
+
+        return (
+            f"### NETWORK & SECURITY INTEGRITY\n"
+            f"- **Internet Latency (1.1.1.1):** {latency}\n"
+            f"- **Local LAN Devices (ARP):** {device_count} active devices\n"
+            f"- **Identified Hardware:** {vendors_str}\n"
+            f"- **Failed SSH Logins (Auth):** {failed_logins} recent attempts"
+        )
+
+
 class TacticalAgent:
     def __init__(self):
-        self.adsb, self.aprs, self.sector, self.usgs, self.nws, self.cisa, self.software, self.rf_sweep = (
+        self.adsb, self.aprs, self.sector, self.usgs, self.nws, self.cisa, self.software, self.rf_sweep, self.netsec = (
             ADSBScanner(),
             APRSStreamer(),
             SectorScanner(),
@@ -564,6 +617,7 @@ class TacticalAgent:
             CISAFeed(),
             LocalSoftwareScanner(),
             WidebandSDRScanner(),
+            NetworkAndSecurityScanner(),
         )
 
     async def generate_full_sitrep(self, prev: Optional[str] = None) -> str:
@@ -577,9 +631,10 @@ class TacticalAgent:
             self.nws.get_alerts(),
             self.cisa.get_latest_vulns(),
             self.software.get_summary(),
-            self.rf_sweep.get_snapshot_text()
+            self.rf_sweep.get_snapshot_text(),
+            self.netsec.get_summary(),
         )
-        return f"Title: Master Tactical SITREP - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{data[1]}\n{data[4]}\n{data[3]}\n{data[6]}\n{data[0]}\n{data[7]}\n{data[2]}\n{data[5]}"
+        return f"Title: Master Tactical SITREP - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{data[1]}\n{data[4]}\n{data[8]}\n{data[3]}\n{data[6]}\n{data[0]}\n{data[7]}\n{data[2]}\n{data[5]}"
 
 
 class ADSBScanner:
