@@ -524,9 +524,38 @@ class LocalSoftwareScanner:
         )
 
 
+class WidebandSDRScanner:
+    def __init__(self, host: str = "192.168.1.246", user: str = "pi"):
+        self.host, self.user = host, user
+
+    async def get_snapshot_text(self) -> str:
+        import asyncio, json
+        # Execute the juggler script on CORE via SSH
+        cmd = ["ssh", f"{self.user}@{self.host}", "python3 /home/pi/bin/radar_sdr_juggler.py"]
+        try:
+            proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            stdout, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                return f"Wideband SDR Error: {stderr.decode()}"
+            
+            data = json.loads(stdout.decode())
+            if "error" in data:
+                return f"Wideband SDR Error: {data['error']}"
+            
+            signals = data.get("top_signals", [])
+            if not signals:
+                return "No strong RF signals detected in wideband sweep."
+                
+            lines = ["### WIDEBAND RF SPECTRUM SWEEP (100MHz - 500MHz)"]
+            for s in signals:
+                lines.append(f"- Frequency: {s['freq']:.2f} MHz | Power: {s['db']:.2f} dB")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Wideband SDR Exception: {str(e)}"
+
 class TacticalAgent:
     def __init__(self):
-        self.adsb, self.aprs, self.sector, self.usgs, self.nws, self.cisa, self.software = (
+        self.adsb, self.aprs, self.sector, self.usgs, self.nws, self.cisa, self.software, self.rf_sweep = (
             ADSBScanner(),
             APRSStreamer(),
             SectorScanner(),
@@ -534,6 +563,7 @@ class TacticalAgent:
             NWSAlerts(),
             CISAFeed(),
             LocalSoftwareScanner(),
+            WidebandSDRScanner(),
         )
 
     async def generate_full_sitrep(self, prev: Optional[str] = None) -> str:
@@ -547,8 +577,9 @@ class TacticalAgent:
             self.nws.get_alerts(),
             self.cisa.get_latest_vulns(),
             self.software.get_summary(),
+            self.rf_sweep.get_snapshot_text()
         )
-        return f"Title: Master Tactical SITREP - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{data[1]}\n{data[4]}\n{data[3]}\n{data[6]}\n{data[0]}\n{data[2]}\n{data[5]}"
+        return f"Title: Master Tactical SITREP - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{data[1]}\n{data[4]}\n{data[3]}\n{data[6]}\n{data[0]}\n{data[7]}\n{data[2]}\n{data[5]}"
 
 
 class ADSBScanner:
