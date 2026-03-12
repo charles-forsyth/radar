@@ -621,14 +621,16 @@ def report(
         True, "--open", help="Open the report in browser."
     ),
 ):
-    """Generate a high-fidelity 'Glass Dashboard' tactical command center report."""
+    """Generate a high-fidelity 'Full Tactical Stack' glass dashboard with deep data integration."""
     import jinja2
     from sqlalchemy import select, desc
     import re
     import asyncio
 
     async def _report():
-        console.print("[bold blue]Forging Glass Dashboard Briefing...[/bold blue]")
+        console.print(
+            "[bold blue]Assembling Full Tactical Stack Briefing...[/bold blue]"
+        )
 
         from radar.core.ingest import IntelligenceAgent
 
@@ -645,32 +647,28 @@ def report(
             current_sitrep = sitreps[0] if len(sitreps) > 0 else None
             prev_sitrep = sitreps[1] if len(sitreps) > 1 else None
 
-            research_stmt = (
-                select(Signal)
-                .where(Signal.title.contains("Deep Research"))
-                .order_by(desc(Signal.date))
-                .limit(8)
-            )
-            research_signals = (await session.execute(research_stmt)).scalars().all()
-
             alert_stmt = (
                 select(TacticalAlert)
                 .where(TacticalAlert.severity.in_(["WARNING", "CRITICAL"]))
                 .order_by(desc(TacticalAlert.created_at))
-                .limit(6)
+                .limit(8)
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
-        async def synthesize_dispatch(signal):
-            prompt = f"Extract only the most critical 2-sentence tactical summary for {signal.title}. No fluff."
-            summary = intel._run_tool(
-                intel.summarize_bin, f"Question: {prompt}\nContext: {signal.content}"
+        async def get_domain_summary(domain_query):
+            results = await intel.search_signals(domain_query, limit=5)
+            if not results:
+                return "No recent data in this domain."
+            summary = await intel.answer_question(
+                f"Summarize the most critical facts and threats from these reports regarding {domain_query}. Focus on tactical specs and specific incidents.",
+                results,
             )
-            clean = re.sub(r"🎯.*?\n", "", summary)
-            clean = re.sub(r"📌.*?\n", "", clean)
-            return clean.strip()
+            # Remove structural boilerplate
+            summary = re.sub(r"🎯.*?\\n", "", summary)
+            summary = re.sub(r"📌.*?\\n", "", summary)
+            return summary.strip()
 
-        def parse_metrics(content):
+        def parse_deep_metrics(content):
             m = {
                 "temp": "N/A",
                 "devices": 0,
@@ -678,166 +676,200 @@ def report(
                 "ssh": 0,
                 "rf_spike": "N/A",
                 "rivers": [],
+                "vendors": "None",
+                "sw_counts": [],
+                "rf_all": [],
             }
-            t = re.search(r"(\d+\.\d+)°F", content)
+            if not content:
+                return m
+
+            # 1. Base Metrics
+            t = re.search(r"(\\d+\\.\d+)°F", content)
             if t:
                 m["temp"] = t.group(1)
-            d = re.search(r"Local LAN Devices \(ARP\):\*\* (\d+)", content)
+            d = re.search(r"Local LAN Devices \\(ARP\\):\\*\\* (\\d+)", content)
             if d:
                 m["devices"] = int(d.group(1))
             m["planes"] = len(re.findall(r"Flight ", content))
-            s = re.search(r"Failed SSH Logins \(Auth\):\*\* (\d+)", content)
+            s = re.search(r"Failed SSH Logins \\(Auth\\):\\*\\* (\\d+)", content)
             if s:
                 m["ssh"] = int(s.group(1))
-            rf = re.search(r"Frequency: ([\d\.]+) MHz \| Power: ([\d\.]+) dB", content)
-            if rf:
-                m["rf_spike"] = f"{rf.group(1)} MHz"
 
-            # Extract river data lines
+            # 2. SIGINT (All Frequencies)
+            rf_matches = re.findall(
+                r"Frequency: ([\\d\\.]+) MHz \\| Power: ([\\d\\.]+) dB", content
+            )
+            m["rf_all"] = [f"{f} MHz ({p} dB)" for f, p in rf_matches]
+            if rf_matches:
+                m["rf_spike"] = f"{rf_matches[0][0]} MHz"
+
+            # 3. Rivers
             river_lines = re.findall(r"- (.* River at .*?: .*? (?:ft|cfs))", content)
-            m["rivers"] = river_lines[:3]
+            m["rivers"] = river_lines[:4]
+
+            # 4. Network Vendors
+            v = re.search(r"Identified Hardware:\\*\\* (.*)\\n", content)
+            if v:
+                m["vendors"] = v.group(1)
+
+            # 5. Software Arsenal
+            sw = re.findall(
+                r"- \\*\\*(?:APT|pip|uv|micromamba).*?\\*\\* (\\d+)", content
+            )
+            labels = ["APT", "PIP", "UV", "MAMBA"]
+            m["sw_counts"] = [f"{label}: {c}" for label, c in zip(labels, sw)]
+
             return m
 
-        curr_m = parse_metrics(current_sitrep.content) if current_sitrep else {}
-        prev_m = parse_metrics(prev_sitrep.content) if prev_sitrep else {}
+        curr_m = parse_deep_metrics(current_sitrep.content) if current_sitrep else {}
+        prev_m = parse_deep_metrics(prev_sitrep.content) if prev_sitrep else {}
 
         deltas = []
         if curr_m and prev_m:
             if curr_m["devices"] != prev_m["devices"]:
-                diff = curr_m["devices"] - prev_m["devices"]
-                deltas.append(f"Subnet: {'+' if diff > 0 else ''}{diff} nodes.")
+                deltas.append(
+                    f"Subnet Delta: {curr_m['devices'] - prev_m['devices']} nodes."
+                )
             if curr_m["ssh"] > prev_m["ssh"]:
                 deltas.append(
-                    f"Intrusions: +{curr_m['ssh'] - prev_m['ssh']} SSH fails."
+                    f"Intrusion Risk: +{curr_m['ssh'] - prev_m['ssh']} SSH fails."
                 )
-            if abs(curr_m["planes"] - prev_m["planes"]) > 2:
-                deltas.append(f"Airspace: {curr_m['planes']} units in sector.")
+            if abs(curr_m["planes"] - prev_m["planes"]) > 3:
+                deltas.append(f"Traffic Shift: {curr_m['planes']} sector units.")
 
+        # Synthesize targeted intelligence blocks
         with console.status(
-            "[bold cyan]Synthesizing tactical data buckets...[/bold cyan]"
+            "[bold cyan]Generating high-density intelligence summaries...[/bold cyan]"
         ):
-            tasks = [synthesize_dispatch(s) for s in research_signals]
-            summaries = await asyncio.gather(*tasks)
-            dispatches = []
-            for s, summary in zip(research_signals, summaries):
-                dispatches.append(
-                    {
-                        "title": s.title.replace("Deep Research - ", "").upper()[:40],
-                        "body": summary,
-                    }
-                )
+            cyber_summary = await get_domain_summary(
+                "cyber threats, P25 encryption, and SDR vulnerabilities"
+            )
+            logistics_summary = await get_domain_summary(
+                "PA rail logistics, military base activity, and Tobyhanna/Indiantown Gap"
+            )
+            tech_summary = await get_domain_summary(
+                "off-grid power, LifePo4 battery management, and hardware engineering"
+            )
 
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap');
-        body { background-color: #05070a; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; overflow: hidden; }
+        body { background-color: #05070a; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; overflow-x: hidden; }
         
-        /* Grid Layout */
-        .glass-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; grid-template-rows: 60px 140px 1fr 120px; gap: 15px; height: calc(100vh - 30px); }
+        .grid-container { display: grid; grid-template-columns: 320px 1fr 320px; grid-template-rows: 60px 1fr 140px; gap: 15px; height: calc(100vh - 30px); }
         
-        .header { grid-column: 1 / span 4; border: 1px solid #00ff41; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; background: #00ff4111; box-shadow: 0 0 10px #00ff4133; }
-        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.5rem; font-weight: bold; }
+        .header { grid-column: 1 / span 3; border: 1px solid #00ff41; display: flex; justify-content: space-between; align-items: center; padding: 0 25px; background: #00ff4111; }
+        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.4rem; font-weight: bold; text-shadow: 0 0 10px #00ff41; }
         
-        .widget { border: 1px solid #00ff41; background: #080c12; padding: 15px; box-shadow: inset 0 0 10px #00ff4111; position: relative; }
-        .widget-label { position: absolute; top: -8px; left: 10px; background: #05070a; padding: 0 5px; color: #008f11; font-weight: bold; font-size: 9px; border-left: 1px solid #00ff41; border-right: 1px solid #00ff41; }
+        .block { border: 1px solid #00ff41; background: #080c12; padding: 20px; position: relative; overflow-y: auto; }
+        .block-label { position: absolute; top: -9px; left: 15px; background: #05070a; padding: 0 8px; color: #00ff41; font-weight: bold; font-size: 10px; border: 1px solid #00ff41; }
         
-        .metric-val { font-size: 2rem; font-weight: bold; text-align: center; margin-top: 15px; text-shadow: 0 0 15px #00ff41; }
-        .metric-sub { font-size: 10px; text-align: center; color: #008f11; }
+        .side-col { display: flex; flex-direction: column; gap: 15px; }
+        .center-col { display: flex; flex-direction: column; gap: 15px; }
         
-        .alert-area { grid-column: 1 / span 1; grid-row: 3 / span 1; border-color: #ff3131; color: #ff3131; }
-        .alert-item { border-bottom: 1px solid #ff313144; padding: 8px 0; font-size: 10px; font-weight: bold; }
+        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #004111; padding: 8px 0; }
+        .stat-label { color: #008f11; font-size: 10px; }
+        .stat-val { font-weight: bold; }
         
-        .briefing-area { grid-column: 2 / span 2; grid-row: 3 / span 1; overflow-y: auto; padding: 25px; }
-        .dispatch { border-bottom: 1px solid #004111; padding-bottom: 15px; margin-bottom: 15px; }
-        .dispatch-title { color: #00ff41; font-weight: bold; margin-bottom: 5px; display: flex; justify-content: space-between; }
-        .dispatch-body { color: #a0a0a0; text-transform: none; font-size: 12px; line-height: 1.4; }
+        .big-metric { font-size: 2.5rem; font-weight: bold; text-align: center; margin: 10px 0; text-shadow: 0 0 20px #00ff41; }
         
-        .spectrum-area { grid-column: 4 / span 1; grid-row: 3 / span 1; }
-        .spectrum-line { display: flex; justify-content: space-between; border-bottom: 1px solid #004111; padding: 5px 0; }
+        .intel-card { border: 1px solid #004111; padding: 20px; background: #0a0f18; margin-bottom: 15px; }
+        .intel-title { color: #00ff41; font-weight: bold; border-bottom: 1px solid #00ff41; padding-bottom: 5px; margin-bottom: 10px; font-size: 12px; }
+        .intel-body { color: #b0b0b0; text-transform: none; line-height: 1.5; font-size: 12px; }
         
-        .delta-area { grid-column: 1 / span 4; grid-row: 4 / span 1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; }
-        .delta-box { border: 1px dotted #ffff00; padding: 10px; color: #ffff00; }
+        .alert-box { border: 1px solid #ff3131; background: rgba(255, 49, 49, 0.1); color: #ff3131; padding: 10px; margin-bottom: 8px; font-size: 10px; }
+        .delta-box { border: 1px solid #ffff00; color: #ffff00; padding: 10px; font-size: 10px; font-weight: bold; }
         
-        .blink { animation: blink 1s infinite; }
+        .blink { animation: blink 1.5s infinite; }
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.1; } 100% { opacity: 1; } }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: #00ff41; }
         """
 
         template = jinja2.Template("""
         <html>
-        <head><style>{{ css }}</style><title>RADAR GLASS DASHBOARD</title></head>
+        <head><style>{{ css }}</style><title>RADAR TACTICAL STACK</title></head>
         <body>
-            <div class="glass-grid">
+            <div class="grid-container">
                 <div class="header">
-                    <span class="header-title"><span class="blink">●</span> RADAR COMMAND CENTER // TIOGA SECTOR</span>
-                    <span style="color: #008f11;">SYSTEM STATUS: FULLY OPERATIONAL | VERSION: {{ version }} | {{ now }}</span>
+                    <div class="header-title"><span class="blink">●</span> RADAR // FULL TACTICAL STACK BRIEFING</div>
+                    <div style="color: #008f11; text-align: right; font-size: 10px;">LOCATION: 41.9N 77.1W | SECTOR: TIOGA PA<br>GEN: {{ now }} | VER: {{ version }}</div>
                 </div>
 
-                <!-- ROW 1: SENSOR TELEMETRY -->
-                <div class="widget">
-                    <div class="widget-label">ATMOSPHERICS</div>
-                    <div class="metric-val">{{ m.temp }}°F</div>
-                    <div class="metric-sub">SECTOR CLIMATE BASELINE</div>
-                </div>
-                <div class="widget">
-                    <div class="widget-label">AIRSPACE DENSITY</div>
-                    <div class="metric-val">{{ m.planes }}</div>
-                    <div class="metric-sub">ACTIVE ADS-B PINGS</div>
-                </div>
-                <div class="widget">
-                    <div class="widget-label">LAN INTEGRITY</div>
-                    <div class="metric-val">{{ m.devices }}</div>
-                    <div class="metric-sub">NODES ON SUBNET</div>
-                </div>
-                <div class="widget">
-                    <div class="widget-label">AUTH FAILURES</div>
-                    <div class="metric-val" style="color: #ff3131;">{{ m.ssh }}</div>
-                    <div class="metric-sub">UNAUTHORIZED SSH ATTEMPTS</div>
-                </div>
-
-                <!-- ROW 2: INTELLIGENCE & ALERTS -->
-                <div class="widget alert-area">
-                    <div class="widget-label" style="border-color: #ff3131;">CRITICAL THREATS</div>
-                    {% for a in alerts %}
-                    <div class="alert-item">! [{{ a.domain }}] {{ a.message }}</div>
-                    {% else %}
-                    <div style="color: #008f11; text-align: center; margin-top: 40px;">NO ACTIVE THREATS</div>
-                    {% endfor %}
-                </div>
-
-                <div class="widget briefing-area">
-                    <div class="widget-label">INTELLIGENCE DISPATCHES</div>
-                    {% for d in dispatches %}
-                    <div class="dispatch">
-                        <div class="dispatch-title"><span>>> {{ d.title }}</span></div>
-                        <div class="dispatch-body">{{ d.body }}</div>
+                <!-- LEFT COLUMN: SENSOR TELEMETRY -->
+                <div class="side-col">
+                    <div class="block" style="flex: 0 0 160px;">
+                        <div class="block-label">ATMOSPHERICS</div>
+                        <div class="big-metric">{{ m.temp }}°F</div>
+                        <div style="text-align: center; font-size: 9px; color: #008f11;">NOMINAL SECTOR CLIMATE</div>
                     </div>
-                    {% endfor %}
+                    <div class="block" style="flex: 1;">
+                        <div class="block-label">SIGINT SPECTRUM (ALL PEAKS)</div>
+                        {% for f in m.rf_all %}
+                        <div class="stat-row"><span class="stat-label">SIGNAL</span><span class="stat-val">{{ f }}</span></div>
+                        {% endfor %}
+                    </div>
+                    <div class="block" style="flex: 0 0 150px;">
+                        <div class="block-label">HYDROLOGY</div>
+                        {% for r in m.rivers %}
+                        <div style="font-size: 10px; margin-bottom: 5px; color: #008f11;">● {{ r }}</div>
+                        {% endfor %}
+                    </div>
                 </div>
 
-                <div class="widget spectrum-area">
-                    <div class="widget-label">SIGINT SPECTRUM</div>
-                    <div class="spectrum-line"><span>PEAK FREQ</span><span style="font-weight: bold;">{{ m.rf_spike }}</span></div>
-                    <h3 style="font-size: 9px; margin-top: 20px; color: #008f11;">HYDROLOGY STATUS</h3>
-                    {% for r in m.rivers %}
-                    <div style="font-size: 9px; border-bottom: 1px solid #002100; padding: 4px 0;">{{ r }}</div>
-                    {% endfor %}
+                <!-- CENTER COLUMN: SYNTHESIZED INTELLIGENCE -->
+                <div class="center-col">
+                    <div class="block" style="flex: 1;">
+                        <div class="block-label">CORE INTELLIGENCE VIEWPORT</div>
+                        
+                        <div class="intel-card">
+                            <div class="intel-title">>> CYBER & ENCRYPTION STATUS</div>
+                            <div class="intel-body">{{ cyber }}</div>
+                        </div>
+
+                        <div class="intel-card">
+                            <div class="intel-title">>> REGIONAL LOGISTICS & INFRASTRUCTURE</div>
+                            <div class="intel-body">{{ logistics }}</div>
+                        </div>
+
+                        <div class="intel-card">
+                            <div class="intel-title">>> TACTICAL TECH & SURVIVAL</div>
+                            <div class="intel-body">{{ tech }}</div>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- ROW 3: TREND ANALYSIS -->
+                <!-- RIGHT COLUMN: NETWORK & SECURITY -->
+                <div class="side-col">
+                    <div class="block" style="flex: 0 0 160px;">
+                        <div class="block-label">AIRSPACE DENSITY</div>
+                        <div class="big-metric">{{ m.planes }}</div>
+                        <div style="text-align: center; font-size: 9px; color: #008f11;">ACTIVE ADS-B PINGS</div>
+                    </div>
+                    <div class="block" style="flex: 1;">
+                        <div class="block-label">NETWORK TOPOLOGY</div>
+                        <div class="stat-row"><span class="stat-label">ACTIVE NODES</span><span class="stat-val">{{ m.devices }}</span></div>
+                        <div class="stat-row"><span class="stat-label">AUTH FAILS</span><span class="stat-val" style="color:#ff3131">{{ m.ssh }}</span></div>
+                        <div style="font-size: 9px; margin-top: 15px; color: #008f11;">HARDWARE VENDORS:</div>
+                        <div style="font-size: 10px; color: #00ff41; margin-top: 5px;">{{ m.vendors }}</div>
+                        
+                        <div style="font-size: 9px; margin-top: 25px; color: #008f11;">SYSTEM ARSENAL:</div>
+                        {% for sw in m.sw_counts %}
+                        <div class="stat-row"><span class="stat-label">PKGS</span><span class="stat-val">{{ sw }}</span></div>
+                        {% endfor %}
+                    </div>
+                    <div class="block" style="flex: 0 0 150px; border-color: #ff3131;">
+                        <div class="block-label" style="color: #ff3131; border-color: #ff3131;">THREAT LOG</div>
+                        {% for a in alerts %}
+                        <div class="alert-box">! [{{ a.domain }}] {{ a.message }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- FOOTER BAR: TRENDS -->
                 <div class="delta-area">
-                    <div class="delta-box">
-                        <div style="font-size: 8px; margin-bottom: 5px;">SYSTEM HEALTH</div>
-                        <div style="font-size: 10px;">CORE UPTIME: 312H 14M<br>LOCATION: 41.9N 77.1W<br>SENSORS: ACTIVE</div>
-                    </div>
-                    <div class="delta-box" style="border-color: #00ff41; color: #00ff41;">
-                        <div style="font-size: 8px; margin-bottom: 5px;">TACTICAL SHIFTS</div>
-                        {% for d in deltas %}<div style="font-size: 10px;">>> {{ d }}</div>{% endfor %}
-                    </div>
-                    <div class="delta-box" style="border-color: #58a6ff; color: #58a6ff;">
-                        <div style="font-size: 8px; margin-bottom: 5px;">ENCRYPTION STATUS</div>
-                        <div style="font-size: 10px;">P25 MONITORING: READY<br>GMRS (WRZN267): ACTIVE<br>LOCAL RF NOISE: NOMINAL</div>
-                    </div>
+                    <div class="delta-box">>> SYSTEM STATUS: FULLY OPERATIONAL | ENCRYPTED LINK: LOCALHOST:5432</div>
+                    {% for d in deltas %}
+                    <div class="delta-box" style="border-color: #00ff41; color: #00ff41;">>> {{ d }}</div>
+                    {% endfor %}
+                    <div class="delta-box" style="border-color: #58a6ff; color: #58a6ff;">>> ENCRYPTION STATE: P25 MONITORING READY</div>
                 </div>
             </div>
         </body>
@@ -850,15 +882,19 @@ def report(
             m=curr_m,
             deltas=deltas,
             alerts=alerts,
-            dispatches=dispatches,
+            cyber=cyber_summary,
+            logistics=logistics_summary,
+            tech=tech_summary,
             now=now_str,
-            version="0.24.0",
+            version="0.25.0",
         )
 
         fname = "tactical_intelligence_briefing.html"
         with open(fname, "w") as f:
             f.write(html)
-        console.print(f"[bold green]Glass Dashboard forged: {fname}[/bold green]")
+        console.print(
+            f"[bold green]Full Tactical Stack Briefing forged: {fname}[/bold green]"
+        )
         if open_browser:
             import subprocess
 
