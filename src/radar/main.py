@@ -15,6 +15,7 @@ from radar.core.ingest import (
     SectorScanner,
     TacticalAgent,
     RSSIngestAgent,
+    TextIngestAgent,
 )
 from radar.db.engine import async_session
 from radar.db.init import init_db
@@ -73,39 +74,10 @@ async def do_ask_logic(
             if not current_question:
                 break
 
-            question_vector = await intel.get_embedding(current_question)
+            with console.status("[bold blue]Searching...[/bold blue]"):
+                relevant_signals = await intel.search_signals(current_question, limit=5)
+
             async with async_session() as session:
-                # Hybrid Search: Keyword + Vector
-                keywords = [k.lower() for k in current_question.split() if len(k) > 3]
-
-                # 1. Vector Search
-                vector_stmt = (
-                    select(Signal)
-                    .order_by(Signal.vector.l2_distance(question_vector))  # type: ignore
-                    .limit(5)
-                )
-                relevant_signals_seq = (
-                    (await session.execute(vector_stmt)).scalars().all()
-                )
-                relevant_signals = list(relevant_signals_seq)
-
-                # 2. Keyword Fallback/Augmentation
-                if keywords:
-                    kw_cond = [Signal.content.ilike(f"%{kw}%") for kw in keywords]  # type: ignore
-                    from sqlalchemy import or_
-
-                    kw_stmt = select(Signal).where(or_(*kw_cond)).limit(3)
-                    kw_results = (await session.execute(kw_stmt)).scalars().all()
-                    for s in reversed(kw_results):  # Add to beginning
-                        if s.id not in [rs.id for rs in relevant_signals]:
-                            relevant_signals.insert(0, s)
-                        else:
-                            # If already in vector search, move it to the top
-                            relevant_signals.remove(
-                                next(rs for rs in relevant_signals if rs.id == s.id)
-                            )
-                            relevant_signals.insert(0, s)
-
                 history = []
                 if active_session_id:
                     hist_stmt = (
@@ -509,7 +481,6 @@ async def save_ingest_to_db(signal, kg):
 
 
 async def run_ingest(text: str, voice: bool):
-    from radar.core.ingest import TextIngestAgent
     import subprocess
 
     agent = TextIngestAgent()

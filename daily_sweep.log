@@ -1,0 +1,221 @@
+--- Sweep started at Wed Mar 11 08:00:01 PM EDT 2026 ---
+Starting Daily Intelligence Sweep...
+Researching: Tioga County Emergency Monitoring
+Ingested: Title: Deep Research - Tioga County Emergency Monitoring
+Researching: GMRS Operations (WRZN267)
+Failed to fetch https://www.fcc.gov/wireless/bureau-divisions/mobility-division/general-mobile-radio-service-gmrs with Playwright: Page.goto: net::ERR_HTTP2_PROTOCOL_ERROR at https://www.fcc.gov/wireless/bureau-divisions/mobility-division/general-mobile-radio-service-gmrs
+Call log:
+  - navigating to "https://www.fcc.gov/wireless/bureau-divisions/mobility-division/general-mobile-radio-service-gmrs", waiting until "domcontentloaded"
+
+Failed to fetch https://gmrsfrequencies.com/gmrs-frequencies-list.html with Playwright: Page.goto: Navigation to "https://gmrsfrequencies.com/gmrs-frequencies-list.html" is interrupted by another navigation to "chrome-error://chromewebdata/"
+Call log:
+  - navigating to "https://gmrsfrequencies.com/gmrs-frequencies-list.html", waiting until "domcontentloaded"
+
+Failed to fetch https://mygmrs.com/ with Playwright: Page.goto: Navigation to "https://mygmrs.com/" is interrupted by another navigation to "https://gmrsfrequencies.com/gmrs-frequencies-list.html"
+Call log:
+  - navigating to "https://mygmrs.com/", waiting until "domcontentloaded"
+
+Ingested: Title: Deep Research - GMRS Operations (WRZN267)
+Researching: VHF Marine Radio
+Ingested: Title: Deep Research - VHF Marine Radio
+Researching: HAM Radio HF Propagation
+Ingested: Title: Deep Research - HAM Radio HF Propagation
+Researching: Meshtastic / LoRa Mesh
+Ingested: Title: Deep Research - Meshtastic / LoRa Mesh
+Researching: ADS-B Aircraft Tracking
+Ingested: Title: Deep Research - ADS-B Aircraft Tracking
+Researching: Antenna Design
+Ingested: Title: Deep Research - Antenna Design
+Researching: SDR Monitoring
+Ingested: Title: Deep Research - SDR Monitoring
+Researching: HAM Callsign Lookup Tool
+Ingested: Title: Deep Research - HAM Callsign Lookup Tool
+Researching: Kayaking Pine Creek Gorge
+Ingested: Title: Deep Research - Kayaking Pine Creek Gorge
+Researching: Kayaking Susquehanna River
+Ingested: Title: Deep Research - Kayaking Susquehanna River
+Researching: Fishing
+Ingested: Title: Deep Research - Fishing
+Researching: Geocaching
+Ingested: Title: Deep Research - Geocaching
+Researching: Camping
+Ingested: Title: Deep Research - Camping
+Researching: Sailboat Maintenance (O'Day 27)
+Ingested: Title: Deep Research - Sailboat Maintenance (O'Day 27)
+Researching: Financial Independence
+Ingested: Title: Deep Research - Financial Independence
+Researching: Property Management
+Ingested: Title: Deep Research - Property Management
+Researching: Digital Second Brain
+Ingested: Title: Deep Research - Digital Second Brain
+Researching: UCR Research Computing
+Ingested: Title: Deep Research - UCR Research Computing
+Researching: AI Game Development
+Ingested: Title: Deep Research - AI Game Development
+Researching: Web Mapping & Visualization
+Ingested: Title: Deep Research - Web Mapping & Visualization
+Researching: Workflow Automation
+Ingested: Title: Deep Research - Workflow Automation
+Researching: AI Prompt Engineering
+Ingested: Title: Deep Research - AI Prompt Engineering
+Researching: Simulation Modeling
+Ingested: Title: Deep Research - Simulation Modeling
+Researching: HPC Architecture
+Ingested: Title: Deep Research - HPC Architecture
+Researching: Cloud HPC
+Ingested: Title: Deep Research - Cloud HPC
+Researching: HPC Monitoring & Metrics
+Ingested: Title: Deep Research - HPC Monitoring & Metrics
+Researching: Linux Systems Administration
+Ingested: Title: Deep Research - Linux Systems Administration
+Researching: Research IT Governance
+Ingested: Title: Deep Research - Research IT Governance
+Researching: LoRa
+Ingested: Title: Deep Research - LoRa
+Researching: LoRaWAN
+Ingested: Title: Deep Research - LoRaWAN
+Researching: Meshtastic
+Ingested: Title: Deep Research - Meshtastic
+Researching: Local Edge LLMs on Raspberry Pi
+Ingested: Title: Deep Research - Local Edge LLMs on Raspberry Pi
+Researching: Multi-Agent Frameworks (LangGraph, CrewAI, AutoGen)
+Ingested: Title: Deep Research - Multi-Agent Frameworks (LangGraph, CrewAI, 
+AutoGen)
+Researching: Advanced RAG (GraphRAG, Matryoshka embeddings)
+Ingested: Title: Deep Research - Advanced RAG (GraphRAG, Matryoshka embeddings)
+Researching: ATAK Integration with Meshtastic and LoRa
+Ingested: Title: Deep Research - ATAK Integration with Meshtastic and LoRa
+Researching: SDRTrunk Automation for P25 Decoding
+Ingested: Title: Deep Research - SDRTrunk Automation for P25 Decoding
+Researching: NOAA/Meteor M2 Satellite Imagery Decoding
+Ingested: Title: Deep Research - NOAA/Meteor M2 Satellite Imagery Decoding
+Researching: Slurm Power-Aware Scheduling
+Failed to fetch https://arxiv.org/pdf/2009.08289v2 with Playwright: Page.goto: Download is starting
+Call log:
+  - navigating to "https://arxiv.org/pdf/2009.08289v2", waiting until "domcontentloaded"
+
+Ingested: Title: Deep Research - Slurm Power-Aware Scheduling
+Researching: Multi-Instance GPU (MIG) Architecture
+Ingested: Title: Deep Research - Multi-Instance GPU (MIG) Architecture
+Researching: Ceph and DAOS for AI Workloads
+PDF extraction failed for https://snia.org/sites/default/files/CSI/Ceph+Storage+in+a+World+of+AI_ML+Workloads.pdf: Command '['pdftotext', '-layout', '/tmp/tmprwwpmv1m.pdf', '-']' returned non-zero exit status 1.
+Ingested: Title: Deep Research - Ceph and DAOS for AI Workloads
+Researching: Off-grid Solar Power for Remote Repeaters
+Ingested: Title: Deep Research - Off-grid Solar Power for Remote Repeaters
+Researching: AI Workflows for Property Management Accounting
+Ingested: Title: Deep Research - AI Workflows for Property Management Accounting
+Researching: Tobyhanna Army Depot (Monroe County, PA) Logistics & C4ISR
+Ingested: Title: Deep Research - Tobyhanna Army Depot (Monroe County, PA) 
+Logistics & C4ISR
+Researching: Fort Indiantown Gap (Lebanon County, PA) PA National Guard
+Ingested: Title: Deep Research - Fort Indiantown Gap (Lebanon County, PA) PA 
+National Guard
+Researching: Binghamton / Lockheed Martin (Broome County, NY) Aerospace Defense
+Ingested: Title: Deep Research - Binghamton / Lockheed Martin (Broome County, 
+NY) Aerospace Defense
+Researching: Scranton (Lackawanna County, PA) Logistics Hub
+Ingested: Title: Deep Research - Scranton (Lackawanna County, PA) Logistics Hub
+Researching: Harrisburg (Dauphin County, PA) Strategic Reserves and PEMA
+Ingested: Title: Deep Research - Harrisburg (Dauphin County, PA) Strategic 
+Reserves and PEMA
+Researching: Global AI Threats and Autonomous Weapons Systems
+Ingested: Title: Deep Research - Global AI Threats and Autonomous Weapons 
+Systems
+Researching: World Geopolitics, Military Conflicts, and State of War
+Ingested: Title: Deep Research - World Geopolitics, Military Conflicts, and 
+State of War
+Researching: US Domestic Political Climate and Civil Unrest Indicators
+Ingested: Title: Deep Research - US Domestic Political Climate and Civil Unrest 
+Indicators
+Researching: Global and Regional Economic Instability and Supply Chain Threats
+Ingested: Title: Deep Research - Global and Regional Economic Instability and 
+Supply Chain Threats
+Researching: Rise of Surveillance, Police State Infrastructure, and Privacy 
+Threats
+Ingested: Title: Deep Research - Rise of Surveillance, Police State 
+Infrastructure, and Privacy Threats
+Researching: Local and Regional (Northeast US) Economic and Political Threat 
+Vectors
+Ingested: Title: Deep Research - Local and Regional (Northeast US) Economic and 
+Political Threat Vectors
+Researching: Flock Safety ALPR camera locations and deployments in Tioga County 
+PA and surrounding 100 miles
+Ingested: Title: Deep Research - Flock Safety ALPR camera locations and 
+deployments in Tioga County PA and surrounding 100 miles
+Researching: Data Security and advanced threat protection in Cloud and Edge 
+Computing
+Ingested: Title: Deep Research - Data Security and advanced threat protection in
+Cloud and Edge Computing
+Researching: Global military conflicts, world wars, and tactical escalations
+Ingested: Title: Deep Research - Global military conflicts, world wars, and 
+tactical escalations
+Researching: Local police news, funding, spending, and operations in Tioga 
+County PA, Broome County NY, and surrounding regions
+Ingested: Title: Deep Research - Local police news, funding, spending, and 
+operations in Tioga County PA, Broome County NY, and surrounding regions
+Researching: Civic developments and municipal project spending across Northern 
+PA and Upstate NY regions
+Ingested: Title: Deep Research - Civic developments and municipal project 
+spending across Northern PA and Upstate NY regions
+Researching: Tioga County NY $6M P25 Radio Project construction updates and 
+Threat Assessment Team activity
+Ingested: Title: Deep Research - Tioga County NY $6M P25 Radio Project 
+construction updates and Threat Assessment Team activity
+Researching: Tioga County PA Department 50 drone deployment updates and Smart911
+platform integration
+Ingested: Title: Deep Research - Tioga County PA Department 50 drone deployment 
+updates and Smart911 platform integration
+
+Starting Global News Ingestion...
+Ingested News: Title: NanoFarfield: A Portable Far-Field Antenna Measurement 
+Platform (Coming Soon to Crowdfunding)
+Ingested News: Title: JoesScanner: A Modern Frontend for Trunking Recorder to 
+Listen, Browse, and Download Calls
+Ingested News: Title: Researchers Trick Perplexity's Comet AI Browser Into 
+Phishing Scam in Under Four Minutes
+Ingested News: Title: Critical n8n Flaws Allow Remote Code Execution and 
+Exposure of Stored Credentials
+
+Starting Roam Route Ingestion...
+Routing to: Dewey
+Roam execution error for Dewey: [Errno 2] No such file or directory: 'roam'
+Routing to: Rylie
+Roam execution error for Rylie: [Errno 2] No such file or directory: 'roam'
+Routing to: Pam
+Roam execution error for Pam: [Errno 2] No such file or directory: 'roam'
+Routing to: Alex
+Roam execution error for Alex: [Errno 2] No such file or directory: 'roam'
+Routing to: Mom
+Roam execution error for Mom: [Errno 2] No such file or directory: 'roam'
+Routing to: Ember
+Roam execution error for Ember: [Errno 2] No such file or directory: 'roam'
+Routing to: Arcturus
+Roam execution error for Arcturus: [Errno 2] No such file or directory: 'roam'
+Starting Dynamic Browser Sweep...
+Dynamic Scrape: http://sdr.websdrmaasbree.nl:8902/
+Ingested: Title: Dynamic Web Extraction - http://sdr.websdrmaasbree.nl:8902/
+Dynamic Scrape: https://www.broadcastify.com/listen/top
+Ingested: Title: Dynamic Web Extraction - 
+https://www.broadcastify.com/listen/top
+Dynamic Scrape: https://www.broadcastify.com/listen/ctid/2299
+Ingested: Title: Dynamic Web Extraction - 
+https://www.broadcastify.com/listen/ctid/2299
+Dynamic Scrape: https://www.broadcastify.com/listen/ctid/2271
+Ingested: Title: Dynamic Web Extraction - 
+https://www.broadcastify.com/listen/ctid/2271
+Dynamic Scrape: https://www.broadcastify.com/listen/ctid/2263
+Ingested: Title: Dynamic Web Extraction - 
+https://www.broadcastify.com/listen/ctid/2263
+Dynamic Scrape: https://www.broadcastify.com/listen/ctid/1830
+Ingested: Title: Dynamic Web Extraction - 
+https://www.broadcastify.com/listen/ctid/1830
+Dynamic Scrape: https://www.broadcastify.com/listen/ctid/2285
+Ingested: Title: Dynamic Web Extraction - 
+https://www.broadcastify.com/listen/ctid/2285
+Dynamic Scrape: https://www.broadcastify.com/listen/ctid/2277
+Ingested: Title: Dynamic Web Extraction - 
+https://www.broadcastify.com/listen/ctid/2277
+Dynamic Scrape: https://deflock.org/map#map=10/42.052352/-76.600113
+Ingested: Title: Dynamic Web Extraction - 
+https://deflock.org/map#map=10/42.052352/-76.600113
+--- Sweep finished at Wed Mar 11 08:13:34 PM EDT 2026 ---
