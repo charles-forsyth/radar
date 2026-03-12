@@ -656,110 +656,13 @@ def ingest(
 
 
 @app.command()
-def live(refresh: int = 2):
-    """Tactical HUD."""
-
-    async def do_live():
-        from rich.live import Live
-        from rich.table import Table
-        from rich.layout import Layout
-        from rich import box
-        from radar.core.ingest import NewsWire
-
-        adsb, aprs, sector, news_wire = (
-            ADSBScanner(),
-            APRSStreamer(),
-            SectorScanner(),
-            NewsWire(),
-        )
-        asyncio.create_task(aprs.start_stream())
-        layout = Layout()
-        layout.split(
-            Layout(name="header", size=3),
-            Layout(name="body", ratio=1),
-            Layout(name="footer", size=3),
-        )
-        layout["body"].split_row(Layout(name="left"), Layout(name="right"))
-        layout["left"].split_column(Layout(name="adsb"), Layout(name="sector"))
-        layout["right"].split_column(
-            Layout(name="aprs", ratio=1),
-            Layout(name="news", ratio=1),
-            Layout(name="alerts", ratio=1),
-        )
-        with Live(layout, screen=True, refresh_per_second=1):
-            while True:
-                # Fetch data concurrently
-                ac_data, metar, atmos, headlines = await asyncio.gather(
-                    adsb.get_live_data(),
-                    sector.get_metar(),
-                    sector.get_atmos_weather(),
-                    news_wire.get_headlines(),
-                )
-
-                # Fetch recent Tactical Alerts from DB
-                alerts = []
-                async with async_session() as session:
-                    alert_stmt = (
-                        select(TacticalAlert)
-                        .order_by(desc(TacticalAlert.created_at))
-                        .limit(5)
-                    )
-                    alert_res = await session.execute(alert_stmt)
-                    alerts = alert_res.scalars().all()
-
-                layout["header"].update(
-                    Panel(
-                        f"[bold yellow]📡 RADAR TACTICAL HUD[/bold yellow] | {datetime.now().strftime('%H:%M:%S')}",
-                        style="white on blue",
-                    )
-                )
-
-                ac_table = Table(box=box.SIMPLE_HEAD, expand=True)
-                ac_table.add_column("Flight")
-                ac_table.add_column("Alt")
-                for ac in ac_data.get("aircraft", [])[:8]:
-                    ac_table.add_row(
-                        ac.get("flight", "Unk").strip(), f"{ac.get('alt_baro', 0)}ft"
-                    )
-                layout["adsb"].update(Panel(ac_table, title="ADS-B"))
-
-                layout["sector"].update(
-                    Panel(
-                        f"[yellow]Atmos:[/yellow]\n{atmos}\n\n[cyan]KELM:[/cyan]\n{metar}",
-                        title="Sector",
-                    )
-                )
-
-                aprs_table = Table(show_header=False, box=None, expand=True)
-                for p in aprs.packets[-8:]:
-                    aprs_table.add_row(p[:50])
-                layout["aprs"].update(Panel(aprs_table, title="APRS"))
-
-                # News Table
-                news_table = Table(show_header=False, box=None, expand=True)
-                for h in headlines.split("\n")[:8]:
-                    news_table.add_row(f"[dim]![/dim] {h.replace('- ', '')[:55]}")
-                layout["news"].update(Panel(news_table, title="News Wire"))
-
-                # Alerts Table
-                alert_table = Table(show_header=False, box=None, expand=True)
-                for a in alerts:
-                    style = (
-                        "red"
-                        if a.severity == "CRITICAL"
-                        else "yellow"
-                        if a.severity == "WARNING"
-                        else "white"
-                    )
-                    alert_table.add_row(f"[{style}]{a.domain}: {a.message}[/{style}]")
-                layout["alerts"].update(Panel(alert_table, title="Tactical Alerts"))
-
-                await asyncio.sleep(refresh)
-
-    try:
-        asyncio.run(do_live())
-    except KeyboardInterrupt:
-        pass
+def dash():
+    """Launch the Mission Control TUI Dashboard."""
+    import os
+    os.environ["DB_URL"] = settings.DB_URL  # Ensure textual picks up the right DB
+    from radar.ui.dashboard import RadarApp
+    tui = RadarApp()
+    tui.run()
 
 
 @app.command()

@@ -1,153 +1,127 @@
-from rich.layout import Layout
-from rich.panel import Panel
-from rich.table import Table
-from rich.console import Console
-from rich.align import Align
-from rich import box
-from datetime import datetime
-from typing import List
-from radar.db.models import Signal, Entity, Trend
+import asyncio
+from textual.app import App, ComposeResult
+from textual.containers import Horizontal, VerticalScroll, Vertical
+from textual.widgets import Header, Footer, Static, Input, Log, Label, ListItem, ListView
+from textual.reactive import reactive
+from radar.db.engine import async_session
+from radar.db.models import Signal, TacticalAlert
+from sqlalchemy import select, desc
+import textwrap
 
+class SignalItem(ListItem):
+    def __init__(self, title: str, content: str):
+        super().__init__()
+        self.signal_title = title
+        self.signal_content = content
 
-def create_layout() -> Layout:
-    layout = Layout()
-    layout.split(
-        Layout(name="header", size=3),
-        Layout(name="main", ratio=1),
-        Layout(name="footer", size=3),
-    )
-    layout["main"].split_row(
-        Layout(name="left", ratio=2),
-        Layout(name="right", ratio=1),
-    )
-    layout["left"].split(
-        Layout(name="trends", ratio=1),
-        Layout(name="signals", ratio=2),
-    )
-    layout["right"].split(
-        Layout(name="stats", ratio=1),
-        Layout(name="entities", ratio=2),
-    )
-    return layout
+    def compose(self) -> ComposeResult:
+        yield Label(f"📡 {self.signal_title}", classes="signal-title")
 
+class RadarApp(App):
+    """A Textual dashboard for Radar Intelligence."""
 
-def render_header() -> Panel:
-    grid = Table.grid(expand=True)
-    grid.add_column(justify="left")
-    grid.add_column(justify="right")
-    grid.add_row(
-        "[b]RADAR[/b] Intelligence Command",
-        datetime.now().strftime("%Y-%m-%d %H:%M"),
-    )
-    return Panel(grid, style="white on blue")
+    CSS = """
+    Screen {
+        background: $surface;
+    }
+    .panel {
+        border: solid $accent;
+        background: $panel;
+        padding: 1;
+        margin: 1;
+    }
+    #feed-pane {
+        width: 3fr;
+    }
+    #alert-pane {
+        width: 1fr;
+        color: $error;
+    }
+    #detail-pane {
+        height: 2fr;
+        border: solid $success;
+        background: $panel;
+        padding: 1;
+        margin: 1;
+        overflow-y: auto;
+    }
+    .signal-title {
+        text-style: bold;
+        color: $accent;
+        padding-bottom: 1;
+    }
+    """
 
+    BINDINGS = [
+        ("q", "quit", "Quit"),
+        ("r", "refresh_data", "Refresh"),
+    ]
 
-def render_stats(s_count: int, e_count: int, c_count: int, t_count: int) -> Panel:
-    table = Table(show_header=False, box=None, expand=True)
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", justify="right", style="bold white")
+    async def on_mount(self) -> None:
+        self.title = "Radar Mission Control"
+        await self.action_refresh_data()
 
-    table.add_row("Signals", str(s_count))
-    table.add_row("Entities", str(e_count))
-    table.add_row("Connections", str(c_count))
-    table.add_row("Trends", str(t_count))
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Horizontal():
+            with Vertical(id="feed-pane", classes="panel"):
+                yield Label("🌐 Intelligence Feed", classes="panel-header")
+                yield ListView(id="signal-list")
+            with Vertical(id="alert-pane", classes="panel"):
+                yield Label("⚠️ Tactical Alerts", classes="panel-header")
+                yield Log(id="alert-log")
+        
+        with Vertical(id="detail-pane"):
+            yield Label("📄 Document Viewer", classes="panel-header")
+            yield Static(id="document-content")
+            
+        yield Input(placeholder="Search the local corpus (BM25s)...", id="search-input")
+        yield Footer()
 
-    return Panel(
-        Align.center(table, vertical="middle"),
-        title="[bold]System Status[/bold]",
-        border_style="green",
-        box=box.ROUNDED,
-    )
+    async def action_refresh_data(self) -> None:
+        """Fetch latest signals and alerts from the database."""
+        try:
+            async with async_session() as session:
+                # Get Signals
+                stmt = select(Signal).order_by(desc(Signal.date)).limit(50)
+                results = await session.execute(stmt)
+                signals = results.scalars().all()
+                
+                list_view = self.query_one("#signal-list", ListView)
+                await list_view.clear()
+                for s in signals:
+                    await list_view.append(SignalItem(s.title, s.content))
+                    
+                # Get Alerts
+                astmt = select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(20)
+                aresults = await session.execute(astmt)
+                alerts = aresults.scalars().all()
+                
+                alert_log = self.query_one("#alert-log", Log)
+                alert_log.clear()
+                for a in reversed(alerts):
+                    prefix = "🔴 CRITICAL" if a.severity == "CRITICAL" else "🟡 WARNING"
+                    alert_log.write_line(f"{prefix} [{a.domain}]: {a.message}")
+        except Exception as e:
+            self.query_one("#alert-log", Log).write_line(f"DB Error: {e}")
 
+    async def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """When a signal is selected, show its content in the viewer."""
+        item = event.item
+        if isinstance(item, SignalItem):
+            viewer = self.query_one("#document-content", Static)
+            wrapped = "\n".join(textwrap.wrap(item.signal_content, width=120))
+            viewer.update(wrapped)
 
-def render_trends(trends: List[Trend]) -> Panel:
-    table = Table(expand=True, box=box.SIMPLE_HEAD, show_edge=False)
-    table.add_column("Trend Name", style="bold yellow")
-    table.add_column("Velocity", style="cyan")
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle BM25s searches."""
+        query = event.value
+        viewer = self.query_one("#document-content", Static)
+        if not query.strip():
+            return
+            
+        viewer.update(f"Searching BM25 index for: {query}\n[Implement BM25s hook here...]")
 
-    for t in trends:
-        table.add_row(t.name, t.velocity)
-
-    return Panel(
-        table,
-        title="[bold]Emerging Trends[/bold]",
-        border_style="yellow",
-        box=box.ROUNDED,
-    )
-
-
-def render_signals(signals: List[Signal]) -> Panel:
-    table = Table(expand=True, box=box.SIMPLE_HEAD, show_edge=False)
-    table.add_column("Date", style="dim", width=12)
-    table.add_column("Title", style="bold white")
-    table.add_column("Src", style="cyan", width=6)
-
-    for s in signals:
-        table.add_row(
-            s.date.strftime("%m-%d %H:%M"),
-            s.title[:60] + "..." if len(s.title) > 60 else s.title,
-            s.source,
-        )
-
-    return Panel(
-        table, title="[bold]Recent Signals[/bold]", border_style="blue", box=box.ROUNDED
-    )
-
-
-def render_entities(entities: List[Entity]) -> Panel:
-    table = Table(expand=True, box=box.SIMPLE_HEAD, show_edge=False)
-    table.add_column("Entity", style="white")
-    table.add_column("Type", style="dim")
-
-    for e in entities:
-        type_color = "white"
-        if e.type == "COMPANY":
-            type_color = "orange1"
-        elif e.type == "TECH":
-            type_color = "green"
-        elif e.type == "PERSON":
-            type_color = "red"
-
-        table.add_row(e.name, f"[{type_color}]{e.type}[/{type_color}]")
-
-    return Panel(
-        table,
-        title="[bold]Key Entities[/bold]",
-        border_style="magenta",
-        box=box.ROUNDED,
-    )
-
-
-def render_dashboard_layout(
-    signals: List[Signal],
-    entities: List[Entity],
-    trends: List[Trend],
-    stats: dict,
-) -> Layout:
-    layout = create_layout()
-
-    layout["header"].update(render_header())
-    layout["stats"].update(
-        render_stats(
-            stats["signals"], stats["entities"], stats["connections"], stats["trends"]
-        )
-    )
-    layout["trends"].update(render_trends(trends))
-    layout["signals"].update(render_signals(signals))
-    layout["entities"].update(render_entities(entities))
-    layout["footer"].update(
-        Panel(Align.center("[dim]Press Ctrl+C to exit[/dim]"), style="white on black")
-    )
-
-    return layout
-
-
-def render_dashboard(
-    console: Console,
-    signals: List[Signal],
-    entities: List[Entity],
-    trends: List[Trend],
-    stats: dict,
-):
-    layout = render_dashboard_layout(signals, entities, trends, stats)
-    console.print(layout)
+if __name__ == "__main__":
+    app = RadarApp()
+    app.run()
