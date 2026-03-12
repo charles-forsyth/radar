@@ -47,9 +47,9 @@ Binghamton / Lockheed Martin (Broome County, NY) Aerospace Defense
 Scranton (Lackawanna County, PA) Logistics Hub
 Harrisburg (Dauphin County, PA) Strategic Reserves and PEMA
 Global AI Threats and Autonomous Weapons Systems
-World Geopolitics, Military Conflicts, and State of War
-US Domestic Political Climate and Civil Unrest Indicators
-Global and Regional Economic Instability and Supply Chain Threats
+World Geopolitics, military troop counts, casualty statistics, and conflict escalations
+US Domestic Political Climate, protest counts, and civil unrest statistical indicators
+Global and Regional Economic Instability, inflation rates, and supply chain delay statistics
 Rise of Surveillance, Police State Infrastructure, and Privacy Threats
 Local and Regional (Northeast US) Economic and Political Threat Vectors
 Flock Safety ALPR camera locations and deployments in Tioga County PA and surrounding 100 miles
@@ -59,3 +59,136 @@ Local police news, funding, spending, and operations in Tioga County PA, Broome 
 Civic developments and municipal project spending across Northern PA and Upstate NY regions
 Tioga County NY $6M P25 Radio Project construction updates and Threat Assessment Team activity
 Tioga County PA Department 50 drone deployment updates and Smart911 platform integration
+# Added 2026-03-11: Highly specific technical and tactical sub-topics
+Pennsylvania P25 Phase II Statewide Radio Network upgrades and encryption status
+Tioga County PA Commissioner Meeting Minutes and Emergency Services Budget
+Broome County NY District Attorney community policing grant awards
+SolarWinds and n8n CVE exploit methodologies and patches
+OpenCV image processing algorithms for ALPR and drone thermal cameras
+RTL-SDR v4 vs HackRF One noise floor comparisons for VHF
+MyGMRS repeater listings and elevation maps for Northern PA
+Pine Creek PA water levels, USGS gauge analysis, and flood warnings
+Susquehanna River Towanda PA kayaking hazards and flow rates
+O'Day 27 sailboat rigging diagrams, fiberglass repair, and hull blisters
+Geocaching premium hides and trackables near Wellsboro PA
+Real estate capitalization rates, average rent per square foot, and vacancy percentages in Upstate NY
+Neo4j GraphRAG query optimization for personal knowledge bases
+PostgreSQL pgvector performance tuning for local LLM embeddings
+Textual TUI Python framework widgets and asynchronous UI updates
+Llama.cpp and Ollama tokens-per-second benchmarks and quantization performance stats
+CrewAI hierarchical task delegation and LangGraph state machines
+ATAK (Android Team Awareness Kit) plugin development and offline maps
+Meshtastic MQTT gateway bridges and routing over Starlink
+SDRTrunk control channel decryption for P25 Phase I
+NOAA APT and Meteor M2 LRPT automated decoding pipelines with Raspberry Pi
+Slurm cluster fair-share scheduling and GPU preemption
+NVIDIA H100 vs Blackwell B200 price-to-performance benchmarks, TFLOPS, and power usage stats
+Ceph Object Gateway (RGW) high-availability load balancing
+DAOS (Distributed Asynchronous Object Storage) Intel Optane NVMe performance
+Off-grid LifePo4 battery bank temperature management for radio sheds
+MPPT solar charge controller firmware updates and RF interference (RFI)
+Tobyhanna Army Depot C4ISR contract awards and base expansion
+Fort Indiantown Gap National Guard training schedule and aviation alerts
+Lockheed Martin Owego NY facility hiring trends and defense contracts
+Scranton PA rail logistics and interstate freight security incidents
+PEMA (PA Emergency Management Agency) stockpiles and severe weather responses
+Autonomous drone swarms and AI targeting system ethics debates
+US Navy Strait of Hormuz naval escalations and CENTCOM drone strikes
+US domestic extremist group tracking and domestic terrorism risk indicators
+Global semiconductor supply chain disruptions and TSMC Taiwan geopolitical risks
+Cloudflare and Akamai bot mitigation techniques and headless browser bypassing
+Pennsylvania State Police aviation division helicopter flight logs
+Tioga County NY Sheriff dispatch protocols and mutual aid agreements
+Local municipal broadband grants (ConnectALL) in Orleans/Broome counties
+Smart911 public safety integrations and CAD dispatch software flaws
+
+# STRATEGIC THREAT AWARENESS & GEOPOLITICS
+Global shifts in reserve currencies and de-dollarization indicators
+Strategic chokepoints in global maritime shipping and Piracy activity
+Cyber warfare tactics targeting critical power and water infrastructure
+State-sponsored disinformation campaigns and cognitive warfare techniques
+Trends in mass migration, climate refugees, and border security
+Food supply chain vulnerabilities, fertilizer shortages, and agricultural disruptions
+Emerging biothreats, pandemic indicators, and global health security warnings
+
+# SURVIVAL, HOMESTEADING & OFF-GRID RESILIENCE
+Off-grid water purification, rainwater harvesting, and filtration systems
+Long-term food storage techniques, freeze-drying, and caloric density planning
+Permaculture techniques and high-yield sustainable gardening in Zone 5b/6a
+Tactical medicine, trauma care (TCCC), and off-grid first aid
+Solar generator sizing, EMP shielding (Faraday cages), and power redundancy
+Winter survival tactics, alternative heating, and woodstove safety
+Foraging, wild edibles, and trapping in Northeast hardwood forests
+Barter economies, silver/gold fractional trading, and alternative currencies
+
+# ADVANCED TACTICAL & COMSEC
+Low-probability of intercept (LPI) communications and burst transmission tech
+Direction finding (DF), KrakenSDR, and foxhunting techniques
+Physical security, perimeter defense, and early warning alarm systems
+Evasion of thermal imaging and aerial drone surveillance
+Digital footprint minimization, OPSEC, and burner phone protocols
+Lockpicking, physical penetration testing, and counter-custody techniques
+Tactical urban movement, grey man theory, and situational awareness
+Open Source Intelligence (OSINT) gathering methodologies and tools
+
+# EMERGENCY MANAGEMENT & DISASTER RESPONSE
+FEMA Region 3 alert bulletins and state of emergency declarations
+Nuclear fallout mapping, radiation monitoring networks, and iodine protocols
+Grid-down communication plans, PACE planning, and community defense
+Regional fuel reserve levels, current gasoline and heating oil price statistics in Northeast US and strategic petroleum distribution disruptions
+CBRN (Chemical, Biological, Radiological, Nuclear) personal protective equipment (PPE)
+Wildfire tracking, smoke plumes, and air quality indices in the Northeast
+Avalanche, landslide, and flash flood indicators in the Appalachian region
+
+# APPLIED TECHNOLOGY & EDGE COMPUTING
+Hardening Linux systems against zero-day exploits and physical access
+Building Faraday-isolated offline data repositories
+Mesh networking for autonomous drones using ArduPilot and LoRa
+Scraping dark web marketplaces for local compromised credentials
+DIY night vision (NVG) and thermal imaging camera builds
+Deploying self-hosted mapping servers (OpenMapTiles) without internet
+Reverse engineering closed-source hardware for local repair
+# ADVANCED SITUATIONAL AWARENESS & PSYOP DEFENSE
+Recognizing modern psychological operations and state-actor propaganda
+Predictive behavioral profiling algorithms and how to obscure digital behavior
+Techniques for detecting deepfakes, synthetic voices, and AI hallucinations in real-time
+Identifying covert surveillance techniques and undercover human intelligence gathering
+Methods for establishing secure, offline dead-drop communication points
+Strategies for maintaining psychological resilience during prolonged crisis events
+Urban evasion, anti-kidnapping protocols, and escaping illegal restraints
+
+# CATASTROPHIC INFRASTRUCTURE FAILURE (BLACK SKY EVENTS)
+Carrington Event level solar flare impact modeling on modern power grids
+Coordinated EMP (Electromagnetic Pulse) attack probabilities and defense
+Vulnerabilities in undersea internet cables and global fiber optic backbones
+Black Sky hazard preparedness and operating without municipal water/sewer
+Safeguarding electronic medical equipment and life-saving tech from power surges
+Long-term fuel storage degradation, stabilizers, and diesel polishing techniques
+Establishing local micro-grids using repurposed solar arrays and alternator generators
+
+# THE NEXT-GEN WARFIGHTER & ASYMMETRIC THREATS
+FPV (First Person View) kamikaze drone swarms and countermeasures
+Electronic Warfare (EW) jamming, GPS spoofing, and signal triangulation defense
+Proliferation of 3D-printed ghost guns and undetectable kinetic weapons
+Directed Energy Weapons (DEW), high-power microwaves, and laser defense
+Subversion of biometric security systems (facial recognition, gait analysis)
+Supply chain poisoning of critical microchips and hardware backdoors
+Rogue AI agent containment failures and localized machine intelligence breakouts
+
+# LOCAL INTELLIGENCE GATHERING (OSINT/SIGINT)
+Monitoring ADS-B anomalies: circling surveillance craft, unlisted hex codes, and renditions
+Decoding encrypted P25 tactical frequencies and identifying trunked radio shifts
+Tracking local government procurement logs for surveillance hardware (Stingray, ALPR)
+Analyzing municipal water treatment plant chemical supply orders for vulnerability points
+Scanning local HAM repeater logs for emergency coordination drills
+Tracking local and regional hospital capacity, bed shortages, and triage protocols
+Monitoring specialized agricultural forums for crop failure and disease warnings
+
+# COVERT COMPUTING & INVISIBLE NETWORKS
+Steganography techniques for hiding encrypted data inside innocent media files
+Building an offline Raspberry Pi "PirateBox" for localized secure file sharing
+Deploying Tor hidden services and I2P nodes for untraceable communications
+Air-gapped computing protocols, Faraday bags, and destroying data remanence
+Exploiting SDR (Software Defined Radio) to intercept unencrypted IoT/Smart Home data
+Using Meshtastic for encrypted, off-grid neighborhood watch dispatching
+Creating immutable, cryptographic ledgers locally without internet connection

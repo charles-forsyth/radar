@@ -28,6 +28,7 @@ from radar.db.models import (
     RiverLevel,
     RFPeak,
     SoftwareInventory,
+    Statistic,
 )
 from sqlalchemy import select, desc
 
@@ -459,6 +460,9 @@ async def save_ingest_to_db(signal, kg, intel: IntelligenceAgent):
         f"{signal.title}\n{signal.content[:2000]}"
     )
 
+    # NEW: Extract structured statistics from content
+    extracted_stats = intel.extract_stats(signal.content)
+
     vectors = await intel.get_batch_embeddings(items) if items else []
     ent_vecs, trend_vecs = (
         vectors[: len(kg.entities)],
@@ -467,6 +471,29 @@ async def save_ingest_to_db(signal, kg, intel: IntelligenceAgent):
     async with async_session() as session:
         session.add(signal)
         await session.flush()
+
+        # Save extracted stats
+        for s in extracted_stats:
+            # Categorize based on title keywords
+            category = "GENERAL"
+            t_lower = signal.title.lower()
+            if any(k in t_lower for k in ["price", "cost", "economic", "finance"]):
+                category = "FINANCE"
+            elif any(k in t_lower for k in ["benchmark", "performance", "fps", "t/s"]):
+                category = "TECH_METRICS"
+            elif any(k in t_lower for k in ["capacity", "count", "stats"]):
+                category = "LOGISTICS"
+
+            session.add(
+                Statistic(
+                    category=category,
+                    label=s["label"],
+                    value=s["value"],
+                    unit=s["unit"],
+                    source_signal_id=signal.id,
+                )
+            )
+
         entity_map = {}
         for idx, e in enumerate(kg.entities):
             exist = (
@@ -748,6 +775,10 @@ def report(
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
+            # 6. Fetch Extracted Research Stats
+            stats_stmt = select(Statistic).order_by(desc(Statistic.timestamp)).limit(20)
+            research_stats = (await session.execute(stats_stmt)).scalars().all()
+
         # Prep deltas and formatted metrics
         m_curr = {
             "temp": curr_tel.temp_f if curr_tel else 0.0,
@@ -792,8 +823,8 @@ def report(
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap');
         body { background-color: #05070a; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; overflow-y: auto; }
-        .grid-container { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 60px auto auto; gap: 15px; width: 100%; }
-        .header { grid-column: 1 / span 2; border: 1px solid #00ff41; display: flex; justify-content: space-between; align-items: center; padding: 10px 25px; background: #00ff4111; }
+                .grid-container { display: grid; grid-template-columns: 320px 1fr 320px; grid-template-rows: 60px auto auto; gap: 15px; width: 100%; }
+        .header { grid-column: 1 / span 3; border: 1px solid #00ff41; display: flex; justify-content: space-between; align-items: center; padding: 10px 25px; background: #00ff4111; }
         .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.4rem; font-weight: bold; text-shadow: 0 0 10px #00ff41; }
         .block { border: 1px solid #00ff41; background: #080c12; padding: 20px; position: relative; min-height: 150px; }
         .block-label { position: absolute; top: -9px; left: 15px; background: #05070a; padding: 0 8px; color: #00ff41; font-weight: bold; font-size: 10px; border: 1px solid #00ff41; }
@@ -897,8 +928,9 @@ def report(
             sw=latest_sw,
             deltas=deltas,
             alerts=alerts,
+            stats=research_stats,
             now=now_str,
-            version="0.29.0",
+            version="0.30.0",
         )
 
         fname = "tactical_intelligence_briefing.html"

@@ -132,3 +132,13 @@ class SoftwareInventory(SQLModel, table=True):
     timestamp: datetime = Field(default_factory=datetime.now, index=True)
     manager: str  # "apt", "pip", "uv", "micromamba"
     package_count: int
+
+
+class Statistic(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    timestamp: datetime = Field(default_factory=datetime.now, index=True)
+    category: str = Field(index=True)  # e.g., "FINANCE", "LOGISTICS", "INFRASTRUCTURE"
+    label: str = Field(index=True)     # e.g., "Gas Price", "Wildfire Acres", "GPU Benchmarks"
+    value: float
+    unit: Optional[str] = None         # e.g., "USD", "Acres", "t/s"
+    source_signal_id: Optional[uuid.UUID] = Field(default=None, foreign_key="signal.id")
