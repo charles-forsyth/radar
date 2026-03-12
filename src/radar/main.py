@@ -701,20 +701,20 @@ def report(
 
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap');
-        body { background-color: #05070a; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; overflow-x: hidden; }
-        .grid-container { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 60px 1fr 120px; gap: 15px; height: calc(100vh - 30px); }
-        .header { grid-column: 1 / span 2; border: 1px solid #00ff41; display: flex; justify-content: space-between; align-items: center; padding: 0 25px; background: #00ff4111; }
+        body { background-color: #05070a; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; overflow-y: auto; }
+        .grid-container { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 60px auto auto; gap: 15px; width: 100%; }
+        .header { grid-column: 1 / span 2; border: 1px solid #00ff41; display: flex; justify-content: space-between; align-items: center; padding: 10px 25px; background: #00ff4111; }
         .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.4rem; font-weight: bold; text-shadow: 0 0 10px #00ff41; }
-        .block { border: 1px solid #00ff41; background: #080c12; padding: 20px; position: relative; overflow-y: auto; }
+        .block { border: 1px solid #00ff41; background: #080c12; padding: 20px; position: relative; min-height: 150px; }
         .block-label { position: absolute; top: -9px; left: 15px; background: #05070a; padding: 0 8px; color: #00ff41; font-weight: bold; font-size: 10px; border: 1px solid #00ff41; }
         .col { display: flex; flex-direction: column; gap: 15px; }
-        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #004111; padding: 8px 0; }
-        .stat-label { color: #008f11; font-size: 10px; }
+        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #004111; padding: 6px 0; }
+        .stat-label { color: #008f11; font-size: 9px; }
         .stat-val { font-weight: bold; }
-        .big-metric { font-size: 3.5rem; font-weight: bold; text-align: center; margin: 20px 0; text-shadow: 0 0 20px #00ff41; }
+        .big-metric { font-size: 3rem; font-weight: bold; text-align: center; margin: 15px 0; text-shadow: 0 0 20px #00ff41; }
         .alert-box { border: 1px solid #ff3131; background: rgba(248, 81, 73, 0.1); color: #ff3131; padding: 10px; margin-bottom: 8px; font-size: 10px; }
         .blink { animation: blink 1.5s infinite; }
-        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.1; } 100% { opacity: 1; } }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.2; } 100% { opacity: 1; } }
         """
 
         template = jinja2.Template("""
@@ -803,7 +803,7 @@ def report(
             deltas=deltas,
             alerts=alerts,
             now=now_str,
-            version="0.27.0",
+            version="0.27.1",
         )
 
         fname = "tactical_intelligence_briefing.html"
