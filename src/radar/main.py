@@ -197,6 +197,15 @@ def sync(
     async def do_sync():
         import os
 
+        # Suppress Hugging Face verbosity
+        os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+        os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+
+        # Instantiate IntelligenceAgent ONCE here so the model stays warm
+        from radar.core.ingest import IntelligenceAgent
+
+        shared_intel = IntelligenceAgent()
+
         try:
             if daily:
                 console.print(
@@ -218,7 +227,9 @@ def sync(
                             try:
                                 text = await agent.research(topic)
                                 await run_ingest(
-                                    f"Title: Deep Research - {topic}\n\n{text}", voice
+                                    f"Title: Deep Research - {topic}\n\n{text}",
+                                    voice,
+                                    shared_intel,
                                 )
                             except Exception as e:
                                 console.print(f"[red]Error {topic}:[/red] {e}")
@@ -234,7 +245,7 @@ def sync(
                 news_results = await rss_agent.sync_news()
                 for signal, kg in news_results:
                     # Direct ingestion logic to avoid shell overhead
-                    await save_ingest_to_db(signal, kg)
+                    await save_ingest_to_db(signal, kg, shared_intel)
                     console.print(f"[green]Ingested News:[/green] {signal.title}")
 
                 # 2.5 Roam Route Intel Ingestion
@@ -259,7 +270,7 @@ def sync(
                             final_text = (
                                 f"Title: Route Intel - to {place}\n\n{clean_out}"
                             )
-                            await run_ingest(final_text, voice)
+                            await run_ingest(final_text, voice, shared_intel)
                         else:
                             console.print(
                                 f"[red]Roam failed for {place}:[/red] {result.stderr}"
@@ -294,7 +305,7 @@ def sync(
                                         url, instructions
                                     )
                                     final_text = f"Title: Dynamic Web Extraction - {url}\n\n{text}"
-                                    await run_ingest(final_text, voice)
+                                    await run_ingest(final_text, voice, shared_intel)
                                 except Exception as e:
                                     console.print(
                                         f"[red]Dynamic Scrape failed for {url}:[/red] {e}"
@@ -347,11 +358,10 @@ def sync(
                 sitrep_text = await agent.generate_full_sitrep(prev=prev_sitrep)
 
                 # --- ANOMALY DETECTION ---
-                intel = IntelligenceAgent()
                 with console.status(
                     "[bold magenta]Tactical Sentinel is analyzing for anomalies...[/bold magenta]"
                 ):
-                    anomalies = await intel.detect_anomalies(
+                    anomalies = await shared_intel.detect_anomalies(
                         sitrep_text, baseline_context
                     )
 
@@ -411,7 +421,7 @@ def sync(
                     await session.commit()
                 # -------------------------
 
-                await run_ingest(sitrep_text, voice)
+                await run_ingest(sitrep_text, voice, shared_intel)
 
         finally:
             pass
@@ -419,15 +429,16 @@ def sync(
     asyncio.run(do_sync())
 
 
-async def save_ingest_to_db(signal, kg):
+async def save_ingest_to_db(signal, kg, intel: IntelligenceAgent):
     """Helper to persist a signal and its extraction to the database."""
-    from radar.core.ingest import IntelligenceAgent
-
-    intel = IntelligenceAgent()
-
     items = [f"{e.name}: {e.description}" for e in kg.entities] + [
         f"{t.name}: {t.description}" for t in kg.trends
     ]
+    # Re-embed the main signal content for semantic search
+    signal.vector = await intel.get_embedding(
+        f"{signal.title}\n{signal.content[:2000]}"
+    )
+
     vectors = await intel.get_batch_embeddings(items) if items else []
     ent_vecs, trend_vecs = (
         vectors[: len(kg.entities)],
@@ -471,20 +482,20 @@ async def save_ingest_to_db(signal, kg):
                         vector=trend_vecs[idx] if idx < len(trend_vecs) else None,
                     )
                 )
-        for c in kg.connections:
-            sid, tid = (
-                entity_map.get(c.source_entity_name),
-                entity_map.get(c.target_entity_name),
-            )
-            if sid and tid:
-                exist_conn = (
-                    await session.execute(
-                        select(Connection)
-                        .where(Connection.source_uuid == sid)
-                        .where(Connection.target_uuid == tid)
-                        .where(Connection.type == c.type)
+                for c in kg.connections:
+                    sid, tid = (
+                        entity_map.get(c.source_entity_name),
+                        entity_map.get(c.target_entity_name),
                     )
-                ).scalar_one_or_none()
+                    if sid and tid:
+                        exist_conn = (
+                            await session.execute(
+                                select(Connection)
+                                .where(Connection.source_uuid == sid) # type: ignore
+                                .where(Connection.target_uuid == tid) # type: ignore
+                                .where(Connection.type == c.type)
+                            )
+                        ).scalar_one_or_none()
 
                 if exist_conn:
                     exist_conn.last_seen = datetime.now()
@@ -511,7 +522,9 @@ async def save_ingest_to_db(signal, kg):
                     raise
 
 
-async def run_ingest(text: str, voice: bool):
+async def run_ingest(
+    text: str, voice: bool, shared_intel: Optional[IntelligenceAgent] = None
+):
     import subprocess
 
     agent = TextIngestAgent()
@@ -519,85 +532,25 @@ async def run_ingest(text: str, voice: bool):
     async def _ingest():
         try:
             signal, kg = await agent.ingest(text)
-            items = [f"{e.name}: {e.description}" for e in kg.entities] + [
-                f"{t.name}: {t.description}" for t in kg.trends
-            ]
-            vectors = await agent.intel.get_batch_embeddings(items) if items else []
-            ent_vecs, trend_vecs = (
-                vectors[: len(kg.entities)],
-                vectors[len(kg.entities) :],
-            )
-            async with async_session() as session:
-                session.add(signal)
-                await session.flush()
-                entity_map = {}
-                for idx, e in enumerate(kg.entities):
-                    exist = (
-                        await session.execute(
-                            select(Entity).where(Entity.name == e.name)
-                        )
-                    ).scalar_one_or_none()
-                    if exist:
-                        entity_map[e.name] = exist.id
-                    else:
-                        new_e = Entity(
-                            name=e.name,
-                            type=e.type,
-                            details={"description": e.description},
-                            vector=ent_vecs[idx] if idx < len(ent_vecs) else None,
-                        )
-                        session.add(new_e)
-                        await session.flush()
-                        entity_map[e.name] = new_e.id
-                for idx, t in enumerate(kg.trends):
-                    if not (
-                        await session.execute(select(Trend).where(Trend.name == t.name))
-                    ).scalar_one_or_none():
-                        session.add(
-                            Trend(
-                                name=t.name,
-                                description=t.description,
-                                velocity=t.velocity,
-                                vector=trend_vecs[idx]
-                                if idx < len(trend_vecs)
-                                else None,
-                            )
-                        )
-                for c in kg.connections:
-                    sid, tid = (
-                        entity_map.get(c.source_entity_name),
-                        entity_map.get(c.target_entity_name),
-                    )
-                    if sid and tid:
-                        session.add(
-                            Connection(
-                                source_uuid=sid,
-                                target_uuid=tid,
-                                type=c.type,
-                                meta_data={
-                                    "description": c.description,
-                                    "signal_id": str(signal.id),
-                                },
-                            )
-                        )
-                try:
-                    await session.commit()
-                except Exception as e:
-                    await session.rollback()
-                    if "duplicate key value violates unique constraint" not in str(e):
-                        raise
+            # Use shared intel or the agent's internal one
+            intel = shared_intel if shared_intel else agent.intel
+            await save_ingest_to_db(signal, kg, intel)
+
             console.print(f"[green]Ingested:[/green] {signal.title}")
+
             if voice:
+                alert_text = f"New intelligence report ingested: {signal.title}"
                 subprocess.run(
                     [
                         "/home/chuck/bin/python3",
                         "/home/chuck/Scripts/generate_voice.py",
                         "--temp",
-                        f"Signal ingested: {signal.title}",
+                        alert_text,
                     ]
                 )
-        finally:
-            pass
+        except Exception as e:
+            if "duplicate key value" not in str(e):
+                console.print(f"[red]Ingest failed:[/red] {e}")
 
     await _ingest()
 
