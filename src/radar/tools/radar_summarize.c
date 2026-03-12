@@ -56,6 +56,7 @@ int main(int argc, char *argv[]) {
                 strstr(p, "}") == NULL &&
                 strstr(p, "var ") == NULL &&
                 strstr(p, "window[") == NULL &&
+                strstr(p, "function()") == NULL &&
                 strstr(p, "font-family") == NULL &&
                 strstr(p, "LOCAL EXTRACTIVE") == NULL &&
                 strstr(p, "found no direct hits") == NULL &&

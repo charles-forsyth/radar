@@ -2,3 +2,229 @@ Executing Tactical SITREP Ingest...
 Ingested: Title: Master Tactical SITREP - 2026-03-11 18:30:01
 Executing Tactical SITREP Ingest...
 Ingested: Title: Master Tactical SITREP - 2026-03-11 19:00:02
+Executing Tactical SITREP Ingest...
+Ingested: Title: Master Tactical SITREP - 2026-03-11 19:30:01
+Executing Tactical SITREP Ingest...
+Ingested: Title: Master Tactical SITREP - 2026-03-11 20:00:01
+Executing Tactical SITREP Ingest...
+╭───────────────────── Traceback (most recent call last) ──────────────────────╮
+│ /home/chuck/Projects/radar/src/radar/main.py:423 in sync                     │
+│                                                                              │
+│   420 │   │   finally:                                                       │
+│   421 │   │   │   pass                                                       │
+│   422 │                                                                      │
+│ ❱ 423 │   asyncio.run(do_sync())                                             │
+│   424                                                                        │
+│   425                                                                        │
+│   426 async def save_ingest_to_db(signal, kg):                               │
+│                                                                              │
+│ ╭───── locals ─────╮                                                         │
+│ │    daily = False │                                                         │
+│ │ tactical = True  │                                                         │
+│ │    voice = False │                                                         │
+│ │      web = False │                                                         │
+│ ╰──────────────────╯                                                         │
+│                                                                              │
+│ /home/chuck/lib/python3.12/asyncio/runners.py:194 in run                     │
+│                                                                              │
+│   191 │   │   │   "asyncio.run() cannot be called from a running event loop" │
+│   192 │                                                                      │
+│   193 │   with Runner(debug=debug, loop_factory=loop_factory) as runner:     │
+│ ❱ 194 │   │   return runner.run(main)                                        │
+│   195                                                                        │
+│   196                                                                        │
+│   197 def _cancel_all_tasks(loop):                                           │
+│                                                                              │
+│ ╭─────────────────────────────── locals ────────────────────────────────╮    │
+│ │        debug = None                                                   │    │
+│ │ loop_factory = None                                                   │    │
+│ │         main = <coroutine object sync.<locals>.do_sync at 0x203ea340> │    │
+│ │       runner = <asyncio.runners.Runner object at 0x781d6d3ed910>      │    │
+│ ╰───────────────────────────────────────────────────────────────────────╯    │
+│                                                                              │
+│ /home/chuck/lib/python3.12/asyncio/runners.py:118 in run                     │
+│                                                                              │
+│   115 │   │                                                                  │
+│   116 │   │   self._interrupt_count = 0                                      │
+│   117 │   │   try:                                                           │
+│ ❱ 118 │   │   │   return self._loop.run_until_complete(task)                 │
+│   119 │   │   except exceptions.CancelledError:                              │
+│   120 │   │   │   if self._interrupt_count > 0:                              │
+│   121 │   │   │   │   uncancel = getattr(task, "uncancel", None)             │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │        context = <_contextvars.Context object at 0x781d97d4e780>         │ │
+│ │           coro = <coroutine object sync.<locals>.do_sync at 0x203ea340>  │ │
+│ │           self = <asyncio.runners.Runner object at 0x781d6d3ed910>       │ │
+│ │ sigint_handler = functools.partial(<bound method Runner._on_sigint of    │ │
+│ │                  <asyncio.runners.Runner object at 0x781d6d3ed910>>,     │ │
+│ │                  main_task=<Task finished name='Task-1'                  │ │
+│ │                  coro=<sync.<locals>.do_sync() done, defined at          │ │
+│ │                  /home/chuck/Projects/radar/src/radar/main.py:228>       │ │
+│ │                  exception=ImportError("cannot import name               │ │
+│ │                  'TextIngestAgent' from 'radar.core.ingest'              │ │
+│ │                  (/home/chuck/Projects/radar/src/radar/core/ingest.py)"… │ │
+│ │           task = <Task finished name='Task-1'                            │ │
+│ │                  coro=<sync.<locals>.do_sync() done, defined at          │ │
+│ │                  /home/chuck/Projects/radar/src/radar/main.py:228>       │ │
+│ │                  exception=ImportError("cannot import name               │ │
+│ │                  'TextIngestAgent' from 'radar.core.ingest'              │ │
+│ │                  (/home/chuck/Projects/radar/src/radar/core/ingest.py)"… │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ /home/chuck/lib/python3.12/asyncio/base_events.py:684 in run_until_complete  │
+│                                                                              │
+│    681 │   │   if not future.done():                                         │
+│    682 │   │   │   raise RuntimeError('Event loop stopped before Future comp │
+│    683 │   │                                                                 │
+│ ❱  684 │   │   return future.result()                                        │
+│    685 │                                                                     │
+│    686 │   def stop(self):                                                   │
+│    687 │   │   """Stop running the event loop.                               │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │   future = <Task finished name='Task-1' coro=<sync.<locals>.do_sync()    │ │
+│ │            done, defined at                                              │ │
+│ │            /home/chuck/Projects/radar/src/radar/main.py:228>             │ │
+│ │            exception=ImportError("cannot import name 'TextIngestAgent'   │ │
+│ │            from 'radar.core.ingest'                                      │ │
+│ │            (/home/chuck/Projects/radar/src/radar/core/ingest.py)")>      │ │
+│ │ new_task = False                                                         │ │
+│ │     self = <_UnixSelectorEventLoop running=False closed=True             │ │
+│ │            debug=False>                                                  │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ /home/chuck/Projects/radar/src/radar/main.py:418 in do_sync                  │
+│                                                                              │
+│   415 │   │   │   │   │   await session.commit()                             │
+│   416 │   │   │   │   # -------------------------                            │
+│   417 │   │   │   │                                                          │
+│ ❱ 418 │   │   │   │   await run_ingest(sitrep_text, voice)                   │
+│   419 │   │                                                                  │
+│   420 │   │   finally:                                                       │
+│   421 │   │   │   pass                                                       │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │            agent = <radar.core.ingest.TacticalAgent object at            │ │
+│ │                    0x781d9512e5a0>                                       │ │
+│ │        anomalies = []                                                    │ │
+│ │ baseline_context = '--- SITREP 2026-03-11 20:00:12.759595 ---\nTitle:    │ │
+│ │                    Master Tactical SITREP - 2026-0'+2094                 │ │
+│ │     baseline_res = <sqlalchemy.engine.result.ChunkedIteratorResult       │ │
+│ │                    object at 0x781d6d28ead0>                             │ │
+│ │ baseline_sitreps = [                                                     │ │
+│ │                    │   Signal(                                           │ │
+│ │                    │   │                                                 │ │
+│ │                    id=UUID('4014cca5-c0f6-493c-9147-30be10b99842'),      │ │
+│ │                    │   │   content='Title: Master Tactical SITREP -      │ │
+│ │                    2026-03-11 20:00:01\nSource: Integrated Sensor        │ │
+│ │                    Ar'+3480,                                             │ │
+│ │                    │   │   raw_text=None,                                │ │
+│ │                    │   │   source='local_nlp',                           │ │
+│ │                    │   │   date=datetime.datetime(2026, 3, 11, 20, 0,    │ │
+│ │                    12, 759595),                                          │ │
+│ │                    │   │   title='Title: Master Tactical SITREP -        │ │
+│ │                    2026-03-11 20:00:01',                                 │ │
+│ │                    │   │   url=None,                                     │ │
+│ │                    │   │   vector=None                                   │ │
+│ │                    │   ),                                                │ │
+│ │                    │   Signal(                                           │ │
+│ │                    │   │                                                 │ │
+│ │                    id=UUID('15673bc2-3e9c-4a6c-9f0c-cb43915afab7'),      │ │
+│ │                    │   │   content='Title: Master Tactical SITREP -      │ │
+│ │                    2026-03-11 19:30:01\nSource: Integrated Sensor        │ │
+│ │                    Ar'+2777,                                             │ │
+│ │                    │   │   raw_text=None,                                │ │
+│ │                    │   │   source='local_nlp',                           │ │
+│ │                    │   │   date=datetime.datetime(2026, 3, 11, 19, 30,   │ │
+│ │                    5, 941574),                                           │ │
+│ │                    │   │   title='Title: Master Tactical SITREP -        │ │
+│ │                    2026-03-11 19:30:01',                                 │ │
+│ │                    │   │   url=None,                                     │ │
+│ │                    │   │   vector=None                                   │ │
+│ │                    │   ),                                                │ │
+│ │                    │   Signal(                                           │ │
+│ │                    │   │                                                 │ │
+│ │                    id=UUID('6404810f-30e2-429a-b6c7-65e70ed4824f'),      │ │
+│ │                    │   │   content='Title: Master Tactical SITREP -      │ │
+│ │                    2026-03-11 19:00:02\nSource: Integrated Sensor        │ │
+│ │                    Ar'+2959,                                             │ │
+│ │                    │   │   raw_text=None,                                │ │
+│ │                    │   │   source='local_nlp',                           │ │
+│ │                    │   │   date=datetime.datetime(2026, 3, 11, 19, 0,    │ │
+│ │                    10, 3929),                                            │ │
+│ │                    │   │   title='Title: Master Tactical SITREP -        │ │
+│ │                    2026-03-11 19:00:02',                                 │ │
+│ │                    │   │   url=None,                                     │ │
+│ │                    │   │   vector=None                                   │ │
+│ │                    │   ),                                                │ │
+│ │                    │   Signal(                                           │ │
+│ │                    │   │                                                 │ │
+│ │                    id=UUID('7c55f916-fdec-4ac8-b61e-559600a7db50'),      │ │
+│ │                    │   │   content='Title: Master Tactical SITREP -      │ │
+│ │                    2026-03-11 18:30:01\nSource: Integrated Sensor        │ │
+│ │                    Ar'+2793,                                             │ │
+│ │                    │   │   raw_text=None,                                │ │
+│ │                    │   │   source='local_nlp',                           │ │
+│ │                    │   │   date=datetime.datetime(2026, 3, 11, 18, 30,   │ │
+│ │                    6, 482367),                                           │ │
+│ │                    │   │   title='Title: Master Tactical SITREP -        │ │
+│ │                    2026-03-11 18:30:01',                                 │ │
+│ │                    │   │   url=None,                                     │ │
+│ │                    │   │   vector=None                                   │ │
+│ │                    │   )                                                 │ │
+│ │                    ]                                                     │ │
+│ │    baseline_stmt = <sqlalchemy.sql.selectable.Select object at           │ │
+│ │                    0x781d6d266d20>                                       │ │
+│ │            daily = False                                                 │ │
+│ │            intel = <radar.core.ingest.IntelligenceAgent object at        │ │
+│ │                    0x781d6d2945c0>                                       │ │
+│ │         last_sig = Signal(                                               │ │
+│ │                    │   id=UUID('4014cca5-c0f6-493c-9147-30be10b99842'),  │ │
+│ │                    │   content='Title: Master Tactical SITREP -          │ │
+│ │                    2026-03-11 20:00:01\nSource: Integrated Sensor        │ │
+│ │                    Ar'+3480,                                             │ │
+│ │                    │   raw_text=None,                                    │ │
+│ │                    │   source='local_nlp',                               │ │
+│ │                    │   date=datetime.datetime(2026, 3, 11, 20, 0, 12,    │ │
+│ │                    759595),                                              │ │
+│ │                    │   title='Title: Master Tactical SITREP - 2026-03-11 │ │
+│ │                    20:00:01',                                            │ │
+│ │                    │   url=None,                                         │ │
+│ │                    │   vector=None                                       │ │
+│ │                    )                                                     │ │
+│ │               os = <module 'os' (frozen)>                                │ │
+│ │      prev_sitrep = 'Title: Master Tactical SITREP - 2026-03-11           │ │
+│ │                    20:00:01\nSource: Integrated Sensor Ar'+3480          │ │
+│ │           result = <sqlalchemy.engine.result.ChunkedIteratorResult       │ │
+│ │                    object at 0x781d6d240950>                             │ │
+│ │          session = <sqlalchemy.ext.asyncio.session.AsyncSession object   │ │
+│ │                    at 0x781d6d294bf0>                                    │ │
+│ │   seven_days_ago = datetime.datetime(2026, 3, 4, 20, 30, 2, 309674)      │ │
+│ │      sitrep_text = 'Title: Master Tactical SITREP - 2026-03-11           │ │
+│ │                    20:30:02\nSource: Integrated Sensor Ar'+3079          │ │
+│ │             stmt = <sqlalchemy.sql.selectable.Select object at           │ │
+│ │                    0x781d99bab110>                                       │ │
+│ │         tactical = True                                                  │ │
+│ │            voice = False                                                 │ │
+│ │              web = False                                                 │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│                                                                              │
+│ /home/chuck/Projects/radar/src/radar/main.py:512 in run_ingest               │
+│                                                                              │
+│   509                                                                        │
+│   510                                                                        │
+│   511 async def run_ingest(text: str, voice: bool):                          │
+│ ❱ 512 │   from radar.core.ingest import TextIngestAgent                      │
+│   513 │   import subprocess                                                  │
+│   514 │                                                                      │
+│   515 │   agent = TextIngestAgent()                                          │
+│                                                                              │
+│ ╭───────────────────────────────── locals ─────────────────────────────────╮ │
+│ │  text = 'Title: Master Tactical SITREP - 2026-03-11 20:30:02\nSource:    │ │
+│ │         Integrated Sensor Ar'+3079                                       │ │
+│ │ voice = False                                                            │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ImportError: cannot import name 'TextIngestAgent' from 'radar.core.ingest' 
+(/home/chuck/Projects/radar/src/radar/core/ingest.py)
