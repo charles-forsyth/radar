@@ -546,7 +546,7 @@ class WidebandSDRScanner:
             if not signals:
                 return "No strong RF signals detected in wideband sweep."
                 
-            lines = ["### WIDEBAND RF SPECTRUM SWEEP (100MHz - 500MHz)"]
+            lines = ["### FULL SPECTRUM RF SWEEP (1MHz - 1700MHz)"]
             for s in signals:
                 lines.append(f"- Frequency: {s['freq']:.2f} MHz | Power: {s['db']:.2f} dB")
             return "\n".join(lines)
