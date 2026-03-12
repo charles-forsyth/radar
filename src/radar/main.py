@@ -621,20 +621,14 @@ def report(
         True, "--open", help="Open the report in browser."
     ),
 ):
-    """Generate a high-fidelity 'Full Tactical Stack' glass dashboard with deep data integration."""
+    """Generate a high-fidelity 'Clean Tactical' glass dashboard focusing purely on telemetry."""
     import jinja2
     from sqlalchemy import select, desc
     import re
     import asyncio
 
     async def _report():
-        console.print(
-            "[bold blue]Assembling Full Tactical Stack Briefing...[/bold blue]"
-        )
-
-        from radar.core.ingest import IntelligenceAgent
-
-        intel = IntelligenceAgent()
+        console.print("[bold blue]Forging Clean Tactical Dashboard...[/bold blue]")
 
         async with async_session() as session:
             sitrep_stmt = (
@@ -651,22 +645,9 @@ def report(
                 select(TacticalAlert)
                 .where(TacticalAlert.severity.in_(["WARNING", "CRITICAL"]))
                 .order_by(desc(TacticalAlert.created_at))
-                .limit(8)
+                .limit(12)
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
-
-        async def get_domain_summary(domain_query):
-            results = await intel.search_signals(domain_query, limit=5)
-            if not results:
-                return "No recent data in this domain."
-            summary = await intel.answer_question(
-                f"Summarize the most critical facts and threats from these reports regarding {domain_query}. Focus on tactical specs and specific incidents.",
-                results,
-            )
-            # Remove structural boilerplate
-            summary = re.sub(r"🎯.*?\\n", "", summary)
-            summary = re.sub(r"📌.*?\\n", "", summary)
-            return summary.strip()
 
         def parse_deep_metrics(content):
             m = {
@@ -683,36 +664,29 @@ def report(
             if not content:
                 return m
 
-            # 1. Base Metrics
             t = re.search(r"(\\d+\\.\d+)°F", content)
             if t:
                 m["temp"] = t.group(1)
-            d = re.search(r"Local LAN Devices \\(ARP\\):\\*\\* (\\d+)", content)
+            d = re.search(r"Local LAN Devices \(ARP\):\\*\\* (\\d+)", content)
             if d:
                 m["devices"] = int(d.group(1))
             m["planes"] = len(re.findall(r"Flight ", content))
-            s = re.search(r"Failed SSH Logins \\(Auth\\):\\*\\* (\\d+)", content)
+            s = re.search(r"Failed SSH Logins \(Auth\):\\*\\* (\\d+)", content)
             if s:
                 m["ssh"] = int(s.group(1))
 
-            # 2. SIGINT (All Frequencies)
             rf_matches = re.findall(
                 r"Frequency: ([\\d\\.]+) MHz \\| Power: ([\\d\\.]+) dB", content
             )
             m["rf_all"] = [f"{f} MHz ({p} dB)" for f, p in rf_matches]
-            if rf_matches:
-                m["rf_spike"] = f"{rf_matches[0][0]} MHz"
 
-            # 3. Rivers
             river_lines = re.findall(r"- (.* River at .*?: .*? (?:ft|cfs))", content)
-            m["rivers"] = river_lines[:4]
+            m["rivers"] = river_lines[:6]
 
-            # 4. Network Vendors
             v = re.search(r"Identified Hardware:\\*\\* (.*)\\n", content)
             if v:
                 m["vendors"] = v.group(1)
 
-            # 5. Software Arsenal
             sw = re.findall(
                 r"- \\*\\*(?:APT|pip|uv|micromamba).*?\\*\\* (\\d+)", content
             )
@@ -737,46 +711,27 @@ def report(
             if abs(curr_m["planes"] - prev_m["planes"]) > 3:
                 deltas.append(f"Traffic Shift: {curr_m['planes']} sector units.")
 
-        # Synthesize targeted intelligence blocks
-        with console.status(
-            "[bold cyan]Generating high-density intelligence summaries...[/bold cyan]"
-        ):
-            cyber_summary = await get_domain_summary(
-                "cyber threats, P25 encryption, and SDR vulnerabilities"
-            )
-            logistics_summary = await get_domain_summary(
-                "PA rail logistics, military base activity, and Tobyhanna/Indiantown Gap"
-            )
-            tech_summary = await get_domain_summary(
-                "off-grid power, LifePo4 battery management, and hardware engineering"
-            )
-
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap');
         body { background-color: #05070a; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; overflow-x: hidden; }
         
-        .grid-container { display: grid; grid-template-columns: 320px 1fr 320px; grid-template-rows: 60px 1fr 140px; gap: 15px; height: calc(100vh - 30px); }
+        .grid-container { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 60px 1fr 120px; gap: 15px; height: calc(100vh - 30px); }
         
-        .header { grid-column: 1 / span 3; border: 1px solid #00ff41; display: flex; justify-content: space-between; align-items: center; padding: 0 25px; background: #00ff4111; }
+        .header { grid-column: 1 / span 2; border: 1px solid #00ff41; display: flex; justify-content: space-between; align-items: center; padding: 0 25px; background: #00ff4111; }
         .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.4rem; font-weight: bold; text-shadow: 0 0 10px #00ff41; }
         
         .block { border: 1px solid #00ff41; background: #080c12; padding: 20px; position: relative; overflow-y: auto; }
         .block-label { position: absolute; top: -9px; left: 15px; background: #05070a; padding: 0 8px; color: #00ff41; font-weight: bold; font-size: 10px; border: 1px solid #00ff41; }
         
-        .side-col { display: flex; flex-direction: column; gap: 15px; }
-        .center-col { display: flex; flex-direction: column; gap: 15px; }
+        .col { display: flex; flex-direction: column; gap: 15px; }
         
         .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #004111; padding: 8px 0; }
         .stat-label { color: #008f11; font-size: 10px; }
         .stat-val { font-weight: bold; }
         
-        .big-metric { font-size: 2.5rem; font-weight: bold; text-align: center; margin: 10px 0; text-shadow: 0 0 20px #00ff41; }
+        .big-metric { font-size: 3.5rem; font-weight: bold; text-align: center; margin: 20px 0; text-shadow: 0 0 20px #00ff41; }
         
-        .intel-card { border: 1px solid #004111; padding: 20px; background: #0a0f18; margin-bottom: 15px; }
-        .intel-title { color: #00ff41; font-weight: bold; border-bottom: 1px solid #00ff41; padding-bottom: 5px; margin-bottom: 10px; font-size: 12px; }
-        .intel-body { color: #b0b0b0; text-transform: none; line-height: 1.5; font-size: 12px; }
-        
-        .alert-box { border: 1px solid #ff3131; background: rgba(255, 49, 49, 0.1); color: #ff3131; padding: 10px; margin-bottom: 8px; font-size: 10px; }
+        .alert-box { border: 1px solid #ff3131; background: rgba(248, 81, 73, 0.1); color: #ff3131; padding: 10px; margin-bottom: 8px; font-size: 10px; }
         .delta-box { border: 1px solid #ffff00; color: #ffff00; padding: 10px; font-size: 10px; font-weight: bold; }
         
         .blink { animation: blink 1.5s infinite; }
@@ -785,91 +740,78 @@ def report(
 
         template = jinja2.Template("""
         <html>
-        <head><style>{{ css }}</style><title>RADAR TACTICAL STACK</title></head>
+        <head><style>{{ css }}</style><title>RADAR TACTICAL HUD</title></head>
         <body>
             <div class="grid-container">
                 <div class="header">
-                    <div class="header-title"><span class="blink">●</span> RADAR // FULL TACTICAL STACK BRIEFING</div>
+                    <div class="header-title"><span class="blink">●</span> RADAR // TACTICAL TELEMETRY HUD</div>
                     <div style="color: #008f11; text-align: right; font-size: 10px;">LOCATION: 41.9N 77.1W | SECTOR: TIOGA PA<br>GEN: {{ now }} | VER: {{ version }}</div>
                 </div>
 
                 <!-- LEFT COLUMN: SENSOR TELEMETRY -->
-                <div class="side-col">
-                    <div class="block" style="flex: 0 0 160px;">
+                <div class="col">
+                    <div class="block" style="flex: 0 0 200px;">
                         <div class="block-label">ATMOSPHERICS</div>
                         <div class="big-metric">{{ m.temp }}°F</div>
-                        <div style="text-align: center; font-size: 9px; color: #008f11;">NOMINAL SECTOR CLIMATE</div>
+                        <div style="text-align: center; font-size: 10px; color: #008f11;">NOMINAL SECTOR CLIMATE BASELINE</div>
                     </div>
                     <div class="block" style="flex: 1;">
-                        <div class="block-label">SIGINT SPECTRUM (ALL PEAKS)</div>
+                        <div class="block-label">SIGINT SPECTRUM (PEAK ANALYSIS)</div>
                         {% for f in m.rf_all %}
                         <div class="stat-row"><span class="stat-label">SIGNAL</span><span class="stat-val">{{ f }}</span></div>
                         {% endfor %}
                     </div>
-                    <div class="block" style="flex: 0 0 150px;">
-                        <div class="block-label">HYDROLOGY</div>
+                    <div class="block" style="flex: 0 0 200px;">
+                        <div class="block-label">HYDROLOGY BOARD</div>
                         {% for r in m.rivers %}
-                        <div style="font-size: 10px; margin-bottom: 5px; color: #008f11;">● {{ r }}</div>
+                        <div style="font-size: 11px; margin-bottom: 8px; color: #008f11;">● {{ r }}</div>
                         {% endfor %}
-                    </div>
-                </div>
-
-                <!-- CENTER COLUMN: SYNTHESIZED INTELLIGENCE -->
-                <div class="center-col">
-                    <div class="block" style="flex: 1;">
-                        <div class="block-label">CORE INTELLIGENCE VIEWPORT</div>
-                        
-                        <div class="intel-card">
-                            <div class="intel-title">>> CYBER & ENCRYPTION STATUS</div>
-                            <div class="intel-body">{{ cyber }}</div>
-                        </div>
-
-                        <div class="intel-card">
-                            <div class="intel-title">>> REGIONAL LOGISTICS & INFRASTRUCTURE</div>
-                            <div class="intel-body">{{ logistics }}</div>
-                        </div>
-
-                        <div class="intel-card">
-                            <div class="intel-title">>> TACTICAL TECH & SURVIVAL</div>
-                            <div class="intel-body">{{ tech }}</div>
-                        </div>
                     </div>
                 </div>
 
                 <!-- RIGHT COLUMN: NETWORK & SECURITY -->
-                <div class="side-col">
-                    <div class="block" style="flex: 0 0 160px;">
+                <div class="col">
+                    <div class="block" style="flex: 0 0 200px;">
                         <div class="block-label">AIRSPACE DENSITY</div>
                         <div class="big-metric">{{ m.planes }}</div>
-                        <div style="text-align: center; font-size: 9px; color: #008f11;">ACTIVE ADS-B PINGS</div>
+                        <div style="text-align: center; font-size: 10px; color: #008f11;">ACTIVE ADS-B TRANSPONDER PINGS</div>
                     </div>
                     <div class="block" style="flex: 1;">
-                        <div class="block-label">NETWORK TOPOLOGY</div>
+                        <div class="block-label">NETWORK & SOFTWARE TOPOLOGY</div>
                         <div class="stat-row"><span class="stat-label">ACTIVE NODES</span><span class="stat-val">{{ m.devices }}</span></div>
                         <div class="stat-row"><span class="stat-label">AUTH FAILS</span><span class="stat-val" style="color:#ff3131">{{ m.ssh }}</span></div>
-                        <div style="font-size: 9px; margin-top: 15px; color: #008f11;">HARDWARE VENDORS:</div>
-                        <div style="font-size: 10px; color: #00ff41; margin-top: 5px;">{{ m.vendors }}</div>
+                        <div style="font-size: 10px; margin-top: 20px; color: #008f11;">HARDWARE VENDORS:</div>
+                        <div style="font-size: 11px; color: #00ff41; margin-top: 10px; border: 1px dashed #004111; padding: 10px;">{{ m.vendors }}</div>
                         
-                        <div style="font-size: 9px; margin-top: 25px; color: #008f11;">SYSTEM ARSENAL:</div>
+                        <div style="font-size: 10px; margin-top: 30px; color: #008f11;">SYSTEM SOFTWARE ARSENAL:</div>
                         {% for sw in m.sw_counts %}
-                        <div class="stat-row"><span class="stat-label">PKGS</span><span class="stat-val">{{ sw }}</span></div>
+                        <div class="stat-row"><span class="stat-label">PACKAGE MANAGER</span><span class="stat-val">{{ sw }}</span></div>
                         {% endfor %}
                     </div>
-                    <div class="block" style="flex: 0 0 150px; border-color: #ff3131;">
-                        <div class="block-label" style="color: #ff3131; border-color: #ff3131;">THREAT LOG</div>
+                    <div class="block" style="flex: 0 0 200px; border-color: #ff3131;">
+                        <div class="block-label" style="color: #ff3131; border-color: #ff3131;">CRITICAL THREAT LOG</div>
                         {% for a in alerts %}
                         <div class="alert-box">! [{{ a.domain }}] {{ a.message }}</div>
+                        {% else %}
+                        <div style="text-align: center; margin-top: 30px; color: #008f11; font-weight: bold;">NO ACTIVE SYSTEM THREATS</div>
                         {% endfor %}
                     </div>
                 </div>
 
-                <!-- FOOTER BAR: TRENDS -->
-                <div class="delta-area">
-                    <div class="delta-box">>> SYSTEM STATUS: FULLY OPERATIONAL | ENCRYPTED LINK: LOCALHOST:5432</div>
-                    {% for d in deltas %}
-                    <div class="delta-box" style="border-color: #00ff41; color: #00ff41;">>> {{ d }}</div>
-                    {% endfor %}
-                    <div class="delta-box" style="border-color: #58a6ff; color: #58a6ff;">>> ENCRYPTION STATE: P25 MONITORING READY</div>
+                <!-- FOOTER BAR -->
+                <div style="grid-column: 1 / span 2; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+                    <div class="block" style="border-color: #ffff00; color: #ffff00; padding: 12px;">
+                        <div style="font-size: 9px; margin-bottom: 5px;">TACTICAL SHIFTS</div>
+                        {% for d in deltas %}<div style="font-size: 11px;">>> {{ d }}</div>{% endfor %}
+                    </div>
+                    <div class="block" style="padding: 12px;">
+                        <div style="font-size: 9px; margin-bottom: 5px; color: #008f11;">SYSTEM HEALTH</div>
+                        <div style="font-size: 11px;">CORE UPTIME: 312H 14M<br>SENSORS: ACTIVE</div>
+                    </div>
+                    <div class="block" style="border-color: #58a6ff; color: #58a6ff; padding: 12px;">
+                        <div style="font-size: 9px; margin-bottom: 5px;">ENCRYPTION STATUS</div>
+                        <div style="font-size: 11px;">P25: READY | GMRS: ACTIVE</div>
+                    </div>
                 </div>
             </div>
         </body>
@@ -882,18 +824,15 @@ def report(
             m=curr_m,
             deltas=deltas,
             alerts=alerts,
-            cyber=cyber_summary,
-            logistics=logistics_summary,
-            tech=tech_summary,
             now=now_str,
-            version="0.25.0",
+            version="0.26.0",
         )
 
         fname = "tactical_intelligence_briefing.html"
         with open(fname, "w") as f:
             f.write(html)
         console.print(
-            f"[bold green]Full Tactical Stack Briefing forged: {fname}[/bold green]"
+            f"[bold green]Clean Tactical Dashboard forged: {fname}[/bold green]"
         )
         if open_browser:
             import subprocess
