@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from radar.db.models import Signal
-from radar.core.models import KnowledgeGraphExtraction
+from radar.core.models import KnowledgeGraphExtraction, TacticalSnapshot
 from radar.db.engine import async_session
 
 logger = logging.getLogger(__name__)
@@ -618,24 +618,29 @@ class USGSRiverGauge:
     @retry(
         stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10)
     )
-    async def get_levels(self) -> str:
+    async def get_levels(self) -> dict:
         url = f"https://waterservices.usgs.gov/nwis/iv/?format=json&sites={','.join(self.site_codes)}&parameterCd=00060,00065&siteStatus=all"
         async with httpx.AsyncClient() as client:
             resp = await client.get(url)
             if resp.status_code != 200:
-                return f"Error: {resp.status_code}"
+                return {"text": f"Error: {resp.status_code}", "data": []}
             data = resp.json()
             res = []
+            structured = []
             for ts in data.get("value", {}).get("timeSeries", []):
                 name = ts["sourceInfo"]["siteName"]
-                val = ts["values"][0]["value"][0]["value"]
+                val_str = ts["values"][0]["value"][0]["value"]
+                val = float(val_str)
                 unit = (
                     "ft"
                     if "height" in ts["variable"]["variableName"].lower()
                     else "cfs"
                 )
                 res.append(f"- {name}: {val} {unit}")
-            return "\n".join(sorted(list(set(res)))) if res else "No data."
+                structured.append({"name": name, "value": val, "unit": unit})
+
+            text_out = "\n".join(sorted(list(set(res)))) if res else "No data."
+            return {"text": text_out, "data": structured}
 
 
 class NWSAlerts:
@@ -754,7 +759,7 @@ class SectorScanner:
             r = await client.get("https://aviationweather.gov/api/data/metar?ids=KELM")
             return r.text.strip() if r.status_code == 200 else "Error."
 
-    async def get_atmos_weather(self) -> str:
+    async def get_atmos_weather(self) -> dict:
         try:
             r = subprocess.run(
                 ["/home/chuck/.local/bin/atmos", self.loc],
@@ -763,9 +768,14 @@ class SectorScanner:
             )
             import re
 
-            return re.sub(r"\x1b\[[0-9;]*m", "", r.stdout).strip()
+            text = re.sub(r"\x1b\[[0-9;]*m", "", r.stdout).strip()
+            temp_match = re.search(r"(\d+\.\d+)°F", text)
+            return {
+                "text": text,
+                "temp": float(temp_match.group(1)) if temp_match else None,
+            }
         except Exception:
-            return "Error."
+            return {"text": "Error.", "temp": None}
 
 
 class GridScanner:
@@ -826,7 +836,7 @@ class SatelliteScanner:
 
 
 class LocalSoftwareScanner:
-    async def get_summary(self) -> str:
+    async def get_summary(self) -> dict:
         import asyncio
 
         async def run_count(cmd: str, adjust: int = 0) -> str:
@@ -845,7 +855,6 @@ class LocalSoftwareScanner:
             except Exception:
                 return "Not Found"
 
-        # Gather software and container counts concurrently
         (
             dpkg_count,
             pip_count,
@@ -868,24 +877,34 @@ class LocalSoftwareScanner:
             run_count("gh repo list --limit 1000 | wc -l"),
         )
 
-        return (
-            f"### LOCAL SYSTEM SOFTWARE INVENTORY\n"
-            f"- **APT (dpkg):** {dpkg_count} installed packages\n"
-            f"- **pip (Global):** {pip_count} installed packages\n"
-            f"- **uv (Local Env):** {uv_count} installed packages\n"
-            f"- **micromamba (Base):** {mm_count} installed packages\n"
-            f"### CONTAINERS & REPOSITORIES\n"
-            f"- **Docker:** {docker_ps} running containers / {docker_img} total images\n"
-            f"- **Singularity/Apptainer:** {singularity_count} local .sif/.simg images\n"
+        data = {
+            "apt": int(dpkg_count) if dpkg_count.isdigit() else 0,
+            "pip": int(pip_count) if pip_count.isdigit() else 0,
+            "uv": int(uv_count) if uv_count.isdigit() else 0,
+            "mamba": int(mm_count) if mm_count.isdigit() else 0,
+            "docker_running": int(docker_ps) if docker_ps.isdigit() else 0,
+            "github_repos": int(gh_repos) if gh_repos.isdigit() else 0,
+        }
+
+        text = (
+            f"### LOCAL SYSTEM SOFTWARE INVENTORY\\n"
+            f"- **APT (dpkg):** {dpkg_count} installed packages\\n"
+            f"- **pip (Global):** {pip_count} installed packages\\n"
+            f"- **uv (Local Env):** {uv_count} installed packages\\n"
+            f"- **micromamba (Base):** {mm_count} installed packages\\n"
+            f"### CONTAINERS & REPOSITORIES\\n"
+            f"- **Docker:** {docker_ps} running containers / {docker_img} total images\\n"
+            f"- **Singularity/Apptainer:** {singularity_count} local .sif/.simg images\\n"
             f"- **GitHub Repositories:** {gh_repos} tracked remote repos"
         )
+        return {"text": text, "data": data}
 
 
 class WidebandSDRScanner:
     def __init__(self, host: str = "192.168.1.246", user: str = "pi"):
         self.host, self.user = host, user
 
-    async def get_snapshot_text(self) -> str:
+    async def get_snapshot_text(self) -> dict:
         import asyncio
         import json
 
@@ -901,28 +920,31 @@ class WidebandSDRScanner:
             )
             stdout, stderr = await proc.communicate()
             if proc.returncode != 0:
-                return f"Wideband SDR Error: {stderr.decode()}"
+                return {"text": f"Wideband SDR Error: {stderr.decode()}", "data": []}
 
             data = json.loads(stdout.decode())
             if "error" in data:
-                return f"Wideband SDR Error: {data['error']}"
+                return {"text": f"Wideband SDR Error: {data['error']}", "data": []}
 
             signals = data.get("top_signals", [])
             if not signals:
-                return "No strong RF signals detected in wideband sweep."
+                return {
+                    "text": "No strong RF signals detected in wideband sweep.",
+                    "data": [],
+                }
 
             lines = ["### FULL SPECTRUM RF SWEEP (1MHz - 1700MHz)"]
             for s in signals:
                 lines.append(
                     f"- Frequency: {s['freq']:.2f} MHz | Power: {s['db']:.2f} dB"
                 )
-            return "\n".join(lines)
+            return {"text": "\n".join(lines), "data": signals}
         except Exception as e:
-            return f"Wideband SDR Exception: {str(e)}"
+            return {"text": f"Wideband SDR Exception: {str(e)}", "data": []}
 
 
 class NetworkAndSecurityScanner:
-    async def get_summary(self) -> str:
+    async def get_summary(self) -> dict:
         import asyncio
         import re
 
@@ -936,13 +958,12 @@ class NetworkAndSecurityScanner:
             except Exception:
                 return ""
 
-        # 1. ARP Scan (Local LAN devices)
         arp_output = await run_cmd("sudo -n arp-scan -l")
         device_count = 0
         vendors = set()
         if arp_output:
             for line in arp_output.split("\n"):
-                if re.match(r"^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+", line):
+                if re.match(r"^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+", line):
                     device_count += 1
                     parts = line.split("\t")
                     if len(parts) >= 3:
@@ -950,29 +971,37 @@ class NetworkAndSecurityScanner:
                         if not vendor.startswith("(Unknown"):
                             vendors.add(vendor.split(" ")[0].replace(",", ""))
 
-        # 2. Ping Latency (Internet Health)
         ping_output = await run_cmd("ping -c 3 1.1.1.1")
-        latency = "Offline"
+        latency_val = None
+        latency_str = "Offline"
         if ping_output:
-            match = re.search(r"min/avg/max/mdev = [\d\.]+/([\d\.]+)/", ping_output)
+            match = re.search(r"min/avg/max/mdev = [\\d\\.]+/([\\d\\.]+)/", ping_output)
             if match:
-                latency = f"{match.group(1)} ms"
+                latency_val = float(match.group(1))
+                latency_str = f"{latency_val} ms"
 
-        # 3. Failed SSH/Intrusions
         auth_output = await run_cmd(
             "sudo -n grep 'Failed password' /var/log/auth.log | wc -l"
         )
-        failed_logins = auth_output if auth_output else "0"
-
+        failed_logins = int(auth_output) if auth_output.strip().isdigit() else 0
         vendors_str = ", ".join(list(vendors)[:5]) if vendors else "None identified"
 
-        return (
-            f"### NETWORK & SECURITY INTEGRITY\n"
-            f"- **Internet Latency (1.1.1.1):** {latency}\n"
-            f"- **Local LAN Devices (ARP):** {device_count} active devices\n"
-            f"- **Identified Hardware:** {vendors_str}\n"
+        text = (
+            f"### NETWORK & SECURITY INTEGRITY\\n"
+            f"- **Internet Latency (1.1.1.1):** {latency_str}\\n"
+            f"- **Local LAN Devices (ARP):** {device_count} active devices\\n"
+            f"- **Identified Hardware:** {vendors_str}\\n"
             f"- **Failed SSH Logins (Auth):** {failed_logins} recent attempts"
         )
+        return {
+            "text": text,
+            "data": {
+                "latency": latency_val,
+                "devices": device_count,
+                "ssh_fails": failed_logins,
+                "vendors": vendors_str,
+            },
+        }
 
 
 class TacticalAgent:
@@ -999,21 +1028,60 @@ class TacticalAgent:
             NetworkAndSecurityScanner(),
         )
 
-    async def generate_full_sitrep(self, prev: Optional[str] = None) -> str:
+    async def generate_snapshot(self) -> TacticalSnapshot:
         import asyncio
 
-        data = await asyncio.gather(
-            self.adsb.get_snapshot_text(),
+        results = await asyncio.gather(
+            self.adsb.get_live_data(),
             self.sector.get_atmos_weather(),
-            self.aprs.get_snapshot_text(),
             self.usgs.get_levels(),
-            self.nws.get_alerts(),
-            self.cisa.get_latest_vulns(),
             self.software.get_summary(),
             self.rf_sweep.get_snapshot_text(),
             self.netsec.get_summary(),
+            self.aprs.get_snapshot_text(),
+            self.nws.get_alerts(),
+            self.cisa.get_latest_vulns(),
         )
-        return f"Title: Master Tactical SITREP - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{data[1]}\n{data[4]}\n{data[8]}\n{data[3]}\n{data[6]}\n{data[0]}\n{data[7]}\n{data[2]}\n{data[5]}"
+
+        adsb_raw = results[0]
+        weather = results[1]
+        rivers = results[2]
+        sw = results[3]
+        rf = results[4]
+        netsec = results[5]
+
+        raw_text = f"Title: Master Tactical SITREP - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\\n{weather['text']}\\n{results[7]}\\n{netsec['text']}\\n{rivers['text']}\\n{sw['text']}\\n{self._format_adsb(adsb_raw)}\\n{rf['text']}\\n{results[6]}\\n{results[8]}"
+
+        return TacticalSnapshot(
+            temp_f=weather.get("temp"),
+            aircraft_count=len(adsb_raw.get("aircraft", [])),
+            lan_device_count=netsec["data"].get("devices", 0),
+            ssh_failure_count=netsec["data"].get("ssh_fails", 0),
+            internet_latency_ms=netsec["data"].get("latency"),
+            rf_peaks=[
+                {"freq": s["freq"], "power": s["db"]} for s in rf.get("data", [])
+            ],
+            rivers=rivers.get("data", []),
+            software=sw.get("data", {}),
+            raw_sitrep=raw_text,
+        )
+
+    def _format_adsb(self, d: dict) -> str:
+        ac = d.get("aircraft", [])
+        lines = []
+        for x in ac:
+            flight = x.get("flight", "Unk").strip()
+            alt = x.get("alt_baro", 0)
+            lat, lon = x.get("lat"), x.get("lon")
+            if lat and lon:
+                lines.append(f"- Flight {flight} at {alt}ft (Lat: {lat}, Lon: {lon})")
+            else:
+                lines.append(f"- Flight {flight} at {alt}ft")
+        return "\\n".join(lines) if lines else "No aircraft."
+
+    async def generate_full_sitrep(self, prev: Optional[str] = None) -> str:
+        snap = await self.generate_snapshot()
+        return snap.raw_sitrep
 
 
 class ADSBScanner:

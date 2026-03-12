@@ -1,5 +1,21 @@
 from sqlmodel import SQLModel, text
 from radar.db.engine import engine
+# Import all models so metadata knows about them
+from radar.db.models import (
+    Signal,
+    Trend,
+    Entity,
+    Connection,
+    ChatSession,
+    ChatMessage,
+    Watchpoint,
+    Alert,
+    TacticalAlert,
+    Telemetry,
+    RiverLevel,
+    RFPeak,
+    SoftwareInventory,
+)
 
 
 async def init_db():
