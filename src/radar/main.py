@@ -673,18 +673,23 @@ def map():
 
     async def _map():
         console.print("[bold blue]Generating Offline Tactical Map...[/bold blue]")
-        # Base map centered roughly on the Tioga sector
-        m = folium.Map(location=[41.8, -77.1], zoom_start=9, tiles="CartoDB positron")
+        # Base map centered exactly on Tioga, PA (1539 Button Hill Road area)
+        tioga_coords = [41.9087, -77.1350]
+        m = folium.Map(location=tioga_coords, zoom_start=7, tiles="CartoDB positron")
 
-        # Add the core sector geofence
+        # Add the 150-mile strategic sector geofence (150 miles = 241,401 meters)
         folium.Circle(
-            radius=15000,  # 15km
-            location=[41.8, -77.1],
-            popup="Tioga Sector Core",
+            radius=241401,
+            location=tioga_coords,
+            popup="150-Mile Strategic Sector",
             color="#3186cc",
             fill=True,
             fill_color="#3186cc",
+            fill_opacity=0.1
         ).add_to(m)
+
+        # Add a precise home pin
+        folium.Marker(tioga_coords, popup="Home Base (Tioga, PA)", icon=folium.Icon(color="green", icon="home")).add_to(m)
 
         async with async_session() as session:
             # 1. Look for ADS-B coordinates in SITREPs
