@@ -39,7 +39,7 @@ class IntelligenceAgent:
         logging.getLogger("bm25s").setLevel(logging.WARNING)
 
         async with async_session() as session:
-            stmt = select(Signal).order_by(desc(Signal.date)).limit(500)
+            stmt = select(Signal).order_by(desc(Signal.date)).limit(500)  # type: ignore
             results = await session.execute(stmt)
             signals = results.scalars().all()
             
@@ -677,7 +677,7 @@ class ADSBScanner:
 class APRSStreamer:
     def __init__(self, host: str = "noam.aprs2.net", port: int = 14580, callsign: str = "NOCALL", filter: str = "r/41.8/-77.1/100"):
         self.host, self.port, self.callsign, self.filter = host, port, callsign, filter
-        self.packets = []
+        self.packets: List[str] = []
     async def get_snapshot_text(self) -> str:
         return "\n".join([f"- {p}" for p in self.packets[-15:]]) if self.packets else "No traffic."
     async def start_stream(self):

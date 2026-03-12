@@ -374,15 +374,27 @@ def sync(
                             console.print(
                                 f"[bold red]TACTICAL ALERT [{domain}]:[/bold red] {msg}"
                             )
-                            
+
                             # System Desktop Notification
                             import subprocess
+
                             try:
-                                urgency = "critical" if severity == "CRITICAL" else "normal"
-                                subprocess.run(["notify-send", "-u", urgency, f"Radar Alert: {domain}", msg], check=False)
-                            except Exception as notify_err:
+                                urgency = (
+                                    "critical" if severity == "CRITICAL" else "normal"
+                                )
+                                subprocess.run(
+                                    [
+                                        "notify-send",
+                                        "-u",
+                                        urgency,
+                                        f"Radar Alert: {domain}",
+                                        msg,
+                                    ],
+                                    check=False,
+                                )
+                            except Exception:
                                 pass
-                                
+
                             if voice:
                                 alert_text = f"Captain, tactical anomaly detected in {domain} domain. {msg}"
                                 subprocess.run(
@@ -653,16 +665,207 @@ def ingest(
 
 
 @app.command()
-def dash():
-    """Launch the Mission Control TUI Dashboard."""
-    import os
-    from radar.config import settings
+def map():
+    """Generate an offline HTML map of extracted tactical coordinates."""
+    import folium
+    from sqlalchemy import select
+    import re
 
-    os.environ["DB_URL"] = settings.DB_URL  # Ensure textual picks up the right DB
-    from radar.ui.dashboard import RadarApp
+    async def _map():
+        console.print("[bold blue]Generating Offline Tactical Map...[/bold blue]")
+        # Base map centered roughly on the Tioga sector
+        m = folium.Map(location=[41.8, -77.1], zoom_start=9, tiles="CartoDB positron")
 
-    tui = RadarApp()
-    tui.run()
+        # Add the core sector geofence
+        folium.Circle(
+            radius=15000,  # 15km
+            location=[41.8, -77.1],
+            popup="Tioga Sector Core",
+            color="#3186cc",
+            fill=True,
+            fill_color="#3186cc",
+        ).add_to(m)
+
+        async with async_session() as session:
+            # 1. Look for ADS-B coordinates in SITREPs
+            stmt = select(Signal).where(Signal.title.contains("SITREP")).limit(100)
+            sitreps = (await session.execute(stmt)).scalars().all()
+
+            for s in sitreps:
+                # Naive coordinate extraction for demo purposes
+                # We expect lines like: - Flight UAL450 at 38000ft (Lat: 41.5, Lon: -76.8)
+                matches = re.finditer(
+                    r"Lat:\s*([\-\d\.]+),\s*Lon:\s*([\-\d\.]+)", s.content
+                )
+                for match in matches:
+                    lat, lon = float(match.group(1)), float(match.group(2))
+                    folium.Marker(
+                        [lat, lon],
+                        popup="Aircraft Ping",
+                        icon=folium.Icon(color="red", icon="plane"),
+                    ).add_to(m)
+
+            # 2. Add fixed grid infrastructure from database config
+            # (Mocked for demonstration, would normally query a static infrastructure table)
+            folium.Marker(
+                [41.9, -77.2],
+                popup="Water Treatment",
+                icon=folium.Icon(color="blue", icon="tint"),
+            ).add_to(m)
+            folium.Marker(
+                [41.7, -77.0],
+                popup="Substation Alpha",
+                icon=folium.Icon(color="orange", icon="bolt"),
+            ).add_to(m)
+
+        map_file = "radar_map.html"
+        m.save(map_file)
+        console.print(f"[bold green]Map generated at: {map_file}[/bold green]")
+
+    asyncio.run(_map())
+
+
+@app.command()
+def graph():
+    """Generate an offline 3D Knowledge Graph HTML file."""
+    import json
+
+    async def _graph():
+        console.print("[bold blue]Compiling 3D Knowledge Graph...[/bold blue]")
+        async with async_session() as session:
+            # Fetch all entities
+            estmt = select(Entity)
+            entities = (await session.execute(estmt)).scalars().all()
+
+            # Fetch all connections
+            cstmt = select(Connection)
+            connections = (await session.execute(cstmt)).scalars().all()
+
+        nodes = []
+        node_ids = set()
+
+        for e in entities:
+            color = (
+                "#ff7f0e"
+                if e.type.name == "COMPANY"
+                else "#2ca02c"
+                if e.type.name == "TECH"
+                else "#d62728"
+                if e.type.name == "PERSON"
+                else "#9467bd"
+            )
+            nodes.append(
+                {
+                    "id": str(e.id),
+                    "name": e.name,
+                    "val": 1,
+                    "color": color,
+                    "desc": e.details.get("description", ""),
+                }
+            )
+            node_ids.add(str(e.id))
+
+        links = []
+        for c in connections:
+            if str(c.source_uuid) in node_ids and str(c.target_uuid) in node_ids:
+                links.append(
+                    {
+                        "source": str(c.source_uuid),
+                        "target": str(c.target_uuid),
+                        "name": c.type.name,
+                        "desc": c.meta_data.get("description", ""),
+                    }
+                )
+
+        graph_data = {"nodes": nodes, "links": links}
+
+        # Write standalone HTML file using 3d-force-graph
+        html_content = f"""
+        <head>
+          <style> body {{ margin: 0; }} </style>
+          <script src="https://unpkg.com/3d-force-graph"></script>
+        </head>
+        <body>
+          <div id="3d-graph"></div>
+          <script>
+            const gData = {json.dumps(graph_data)};
+            const Graph = ForceGraph3D()
+              (document.getElementById('3d-graph'))
+                .graphData(gData)
+                .nodeLabel('name')
+                .nodeAutoColorBy('group')
+                .onNodeClick(node => window.alert(node.name + ": " + node.desc));
+          </script>
+        </body>
+        """
+
+        graph_file = "radar_graph.html"
+        with open(graph_file, "w") as f:
+            f.write(html_content)
+
+        console.print(
+            f"[bold green]3D Knowledge Graph generated at: {graph_file}[/bold green]"
+        )
+
+    asyncio.run(_graph())
+
+
+@app.command()
+def serve(port: int = typer.Option(8080, help="Port to run the sync server on.")):
+    """Run a local API server for P2P intelligence mirroring."""
+    import uvicorn
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+
+    api = FastAPI(title="Radar Mesh Node")
+
+    @api.get("/api/sync/sitrep")
+    async def sync_sitrep():
+        async with async_session() as session:
+            stmt = (
+                select(Signal)
+                .where(Signal.title.contains("SITREP"))
+                .order_by(desc(Signal.date))
+                .limit(5)
+            )
+            signals = (await session.execute(stmt)).scalars().all()
+            return JSONResponse(
+                {
+                    "sitreps": [
+                        {"date": str(s.date), "title": s.title, "content": s.content}
+                        for s in signals
+                    ]
+                }
+            )
+
+    @api.get("/api/sync/alerts")
+    async def sync_alerts():
+        async with async_session() as session:
+            stmt = (
+                select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(10)
+            )
+            alerts = (await session.execute(stmt)).scalars().all()
+            return JSONResponse(
+                {
+                    "alerts": [
+                        {
+                            "date": str(a.created_at),
+                            "domain": a.domain,
+                            "severity": a.severity,
+                            "message": a.message,
+                        }
+                        for a in alerts
+                    ]
+                }
+            )
+
+    console.print(
+        f"[bold green]Starting Radar Mesh Node on port {port}...[/bold green]"
+    )
+    console.print(
+        "[dim]Other devices on your network can sync from http://<your-ip>:{port}/api/sync[/dim]"
+    )
+    uvicorn.run(api, host="0.0.0.0", port=port, log_level="warning")
 
 
 @app.command()
