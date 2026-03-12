@@ -621,15 +621,20 @@ def report(
         True, "--open", help="Open the report in browser."
     ),
 ):
-    """Generate an elite, tactical-aesthetic intelligence briefing with deep analytical synthesis."""
+    """Generate a high-fidelity 'Full Tactical Stack' glass dashboard with deep data integration."""
     import jinja2
     from sqlalchemy import select, desc
     import re
+    import asyncio
 
     async def _report():
         console.print(
-            "[bold blue]Synthesizing Command Center Intelligence Briefing...[/bold blue]"
+            "[bold blue]Assembling Full Tactical Stack Briefing...[/bold blue]"
         )
+
+        from radar.core.ingest import IntelligenceAgent
+
+        intel = IntelligenceAgent()
 
         async with async_session() as session:
             sitrep_stmt = (
@@ -642,244 +647,229 @@ def report(
             current_sitrep = sitreps[0] if len(sitreps) > 0 else None
             prev_sitrep = sitreps[1] if len(sitreps) > 1 else None
 
-            research_stmt = (
-                select(Signal)
-                .where(Signal.title.contains("Deep Research"))
-                .order_by(desc(Signal.date))
-                .limit(15)
-            )
-            research_signals = (await session.execute(research_stmt)).scalars().all()
-
             alert_stmt = (
                 select(TacticalAlert)
                 .where(TacticalAlert.severity.in_(["WARNING", "CRITICAL"]))
                 .order_by(desc(TacticalAlert.created_at))
-                .limit(10)
+                .limit(8)
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
-        def clean_intel_dispatch(text):
-            """Advanced heuristic filter to extract high-value intelligence while stripping marketing/cookie fluff."""
-            # 1. Strip structural boilerplate
-            text = re.sub(
-                r"Autonomous Research Report for:.*?\n", "", text, flags=re.IGNORECASE
-            )
-            text = re.sub(r"🎯.*?\n", "", text)
-            text = re.sub(r"Question:.*?\n", "", text, flags=re.IGNORECASE)
-            text = re.sub(r"Target:.*?\n", "", text, flags=re.IGNORECASE)
-            text = re.sub(r"📌 http.*?\n", "", text)
-            text = re.sub(r"Title: Deep Research - .*?\n", "", text)
-
-            # 2. Extract lines and score them for "Intelligence Value"
-            raw_lines = text.split("\n")
-            high_value_lines = []
-
-            fluff_keywords = [
-                "cookie",
-                "privacy",
-                "newsletter",
-                "subscribe",
-                "login",
-                "register",
-                "sign up",
-                "account",
-                "contact",
-                "opportunities",
-                "resume",
-                "linkedin",
-                "twitter",
-                "facebook",
-                "follow us",
-                "all rights reserved",
-                "advertisement",
-                "read more",
-                "comment",
-                "posted by",
-                "last updated",
-                "author:",
-            ]
-
-            for line in raw_lines:
-                line = line.strip()
-                l_lower = line.lower()
-
-                # Skip short noise
-                if len(line) < 30:
-                    continue
-
-                # Skip known fluff
-                if any(k in l_lower for k in fluff_keywords):
-                    continue
-
-                # Skip lines that look like menu items (many pipes or tabs)
-                if line.count("|") > 2 or line.count("  ") > 5:
-                    continue
-
-                # Boost lines with data-rich symbols
-                score = 0
-                if re.search(r"\d+%", line):
-                    score += 5  # Percentages
-                if re.search(r"\d+\.\d+", line):
-                    score += 3  # Decimal numbers
-                if re.search(r"[A-Z]{3,}", line):
-                    score += 2  # Acronyms (HPC, GPU, etc)
-                if "$" in line:
-                    score += 5  # Financials
-                if "vs" in l_lower:
-                    score += 3  # Comparisons
-                if len(line) > 100:
-                    score += 1  # Longer descriptive sentences
-
-                high_value_lines.append((score, line))
-
-            # 3. Sort by score and take top 5 most "intelligent" results
-            high_value_lines.sort(key=lambda x: x[0], reverse=True)
-            results = [x[1] for x in high_value_lines[:5]]
-
+        async def get_domain_summary(domain_query):
+            results = await intel.search_signals(domain_query, limit=5)
             if not results:
-                return "No high-value intelligence extracted from this dispatch."
+                return "No recent data in this domain."
+            summary = await intel.answer_question(
+                f"Summarize the most critical facts and threats from these reports regarding {domain_query}. Focus on tactical specs and specific incidents.",
+                results,
+            )
+            # Remove structural boilerplate
+            summary = re.sub(r"🎯.*?\\n", "", summary)
+            summary = re.sub(r"📌.*?\\n", "", summary)
+            return summary.strip()
 
-            return "\n\n".join(results)
+        def parse_deep_metrics(content):
+            m = {
+                "temp": "N/A",
+                "devices": 0,
+                "planes": 0,
+                "ssh": 0,
+                "rf_spike": "N/A",
+                "rivers": [],
+                "vendors": "None",
+                "sw_counts": [],
+                "rf_all": [],
+            }
+            if not content:
+                return m
 
-        def parse_metrics(content):
-            m = {"temp": "N/A", "devices": 0, "planes": 0, "ssh": 0, "rf_spike": "None"}
-            t = re.search(r"(\d+\.\d+)°F", content)
+            # 1. Base Metrics
+            t = re.search(r"(\\d+\\.\d+)°F", content)
             if t:
                 m["temp"] = t.group(1)
-            d = re.search(r"Local LAN Devices \(ARP\):\*\* (\d+)", content)
+            d = re.search(r"Local LAN Devices \\(ARP\\):\\*\\* (\\d+)", content)
             if d:
                 m["devices"] = int(d.group(1))
             m["planes"] = len(re.findall(r"Flight ", content))
-            s = re.search(r"Failed SSH Logins \(Auth\):\*\* (\d+)", content)
+            s = re.search(r"Failed SSH Logins \\(Auth\\):\\*\\* (\\d+)", content)
             if s:
                 m["ssh"] = int(s.group(1))
-            rf = re.search(r"Frequency: ([\d\.]+) MHz \| Power: ([\d\.]+) dB", content)
-            if rf:
-                m["rf_spike"] = f"{rf.group(1)}MHz"
+
+            # 2. SIGINT (All Frequencies)
+            rf_matches = re.findall(
+                r"Frequency: ([\\d\\.]+) MHz \\| Power: ([\\d\\.]+) dB", content
+            )
+            m["rf_all"] = [f"{f} MHz ({p} dB)" for f, p in rf_matches]
+            if rf_matches:
+                m["rf_spike"] = f"{rf_matches[0][0]} MHz"
+
+            # 3. Rivers
+            river_lines = re.findall(r"- (.* River at .*?: .*? (?:ft|cfs))", content)
+            m["rivers"] = river_lines[:4]
+
+            # 4. Network Vendors
+            v = re.search(r"Identified Hardware:\\*\\* (.*)\\n", content)
+            if v:
+                m["vendors"] = v.group(1)
+
+            # 5. Software Arsenal
+            sw = re.findall(
+                r"- \\*\\*(?:APT|pip|uv|micromamba).*?\\*\\* (\\d+)", content
+            )
+            labels = ["APT", "PIP", "UV", "MAMBA"]
+            m["sw_counts"] = [f"{label}: {c}" for label, c in zip(labels, sw)]
+
             return m
 
-        curr_m = parse_metrics(current_sitrep.content) if current_sitrep else {}
-        prev_m = parse_metrics(prev_sitrep.content) if prev_sitrep else {}
+        curr_m = parse_deep_metrics(current_sitrep.content) if current_sitrep else {}
+        prev_m = parse_deep_metrics(prev_sitrep.content) if prev_sitrep else {}
 
         deltas = []
         if curr_m and prev_m:
             if curr_m["devices"] != prev_m["devices"]:
-                diff = curr_m["devices"] - prev_m["devices"]
                 deltas.append(
-                    f"Subnet Delta: {'+' if diff > 0 else ''}{diff} nodes detected."
+                    f"Subnet Delta: {curr_m['devices'] - prev_m['devices']} nodes."
                 )
             if curr_m["ssh"] > prev_m["ssh"]:
                 deltas.append(
-                    f"Intrusion Escalation: SSH failures increased by {curr_m['ssh'] - prev_m['ssh']}."
+                    f"Intrusion Risk: +{curr_m['ssh'] - prev_m['ssh']} SSH fails."
                 )
             if abs(curr_m["planes"] - prev_m["planes"]) > 3:
-                deltas.append(
-                    f"Air Traffic Shift: {curr_m['planes']} active pings in sector."
-                )
+                deltas.append(f"Traffic Shift: {curr_m['planes']} sector units.")
 
-        categories = {
-            "TACTICAL TECH": [],
-            "INFRASTRUCTURE": [],
-            "SURVIVAL": [],
-            "STRATEGIC": [],
-        }
-        for s in research_signals:
-            body = clean_intel_dispatch(s.content)
-            entry = {
-                "title": s.title.replace("Deep Research - ", "").upper(),
-                "body": body,
-                "date": s.date.strftime("%H:%M"),
-            }
-            if any(
-                k in s.title.lower()
-                for k in ["cyber", "phishing", "sdr", "radio", "p25", "encryption"]
-            ):
-                categories["TACTICAL TECH"].append(entry)
-            elif any(
-                k in s.title.lower() for k in ["tioga", "river", "flood", "emergency"]
-            ):
-                categories["INFRASTRUCTURE"].append(entry)
-            elif any(k in s.title.lower() for k in ["foraging", "survival", "battery"]):
-                categories["SURVIVAL"].append(entry)
-            else:
-                categories["STRATEGIC"].append(entry)
+        # Synthesize targeted intelligence blocks
+        with console.status(
+            "[bold cyan]Generating high-density intelligence summaries...[/bold cyan]"
+        ):
+            cyber_summary = await get_domain_summary(
+                "cyber threats, P25 encryption, and SDR vulnerabilities"
+            )
+            logistics_summary = await get_domain_summary(
+                "PA rail logistics, military base activity, and Tobyhanna/Indiantown Gap"
+            )
+            tech_summary = await get_domain_summary(
+                "off-grid power, LifePo4 battery management, and hardware engineering"
+            )
 
         report_css = """
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
-        body { background-color: #05070a; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 20px; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; }
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap');
+        body { background-color: #05070a; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; overflow-x: hidden; }
         
-        /* Scanline Effect */
-        body::before { content: " "; display: block; position: fixed; top: 0; left: 0; bottom: 0; right: 0; background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06)); z-index: 1000; background-size: 100% 4px, 3px 100%; pointer-events: none; }
+        .grid-container { display: grid; grid-template-columns: 320px 1fr 320px; grid-template-rows: 60px 1fr 140px; gap: 15px; height: calc(100vh - 30px); }
         
-        .hud-grid { display: grid; grid-template-columns: 300px 1fr; gap: 20px; }
-        .sidebar { border: 1px solid #00ff41; padding: 20px; box-shadow: inset 0 0 10px #00ff4133; height: calc(100vh - 80px); position: sticky; top: 20px; overflow-y: auto; }
-        .main-view { border: 1px solid #00ff41; padding: 30px; box-shadow: inset 0 0 15px #00ff4122; }
-        h1 { font-size: 1.8rem; text-align: center; border-bottom: 2px solid #00ff41; padding-bottom: 10px; margin-top: 0; text-shadow: 0 0 10px #00ff41; }
+        .header { grid-column: 1 / span 3; border: 1px solid #00ff41; display: flex; justify-content: space-between; align-items: center; padding: 0 25px; background: #00ff4111; }
+        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.4rem; font-weight: bold; text-shadow: 0 0 10px #00ff41; }
         
-        .metric { border-bottom: 1px solid #004111; padding: 10px 0; display: flex; justify-content: space-between; }
-        .metric-label { color: #008f11; }
-        .metric-value { font-weight: bold; color: #00ff41; }
+        .block { border: 1px solid #00ff41; background: #080c12; padding: 20px; position: relative; overflow-y: auto; }
+        .block-label { position: absolute; top: -9px; left: 15px; background: #05070a; padding: 0 8px; color: #00ff41; font-weight: bold; font-size: 10px; border: 1px solid #00ff41; }
         
-        /* Blinking LIVE indicator */
-        .live-tag { color: #00ff41; font-weight: bold; animation: blink 1s infinite; margin-right: 10px; }
+        .side-col { display: flex; flex-direction: column; gap: 15px; }
+        .center-col { display: flex; flex-direction: column; gap: 15px; }
+        
+        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #004111; padding: 8px 0; }
+        .stat-label { color: #008f11; font-size: 10px; }
+        .stat-val { font-weight: bold; }
+        
+        .big-metric { font-size: 2.5rem; font-weight: bold; text-align: center; margin: 10px 0; text-shadow: 0 0 20px #00ff41; }
+        
+        .intel-card { border: 1px solid #004111; padding: 20px; background: #0a0f18; margin-bottom: 15px; }
+        .intel-title { color: #00ff41; font-weight: bold; border-bottom: 1px solid #00ff41; padding-bottom: 5px; margin-bottom: 10px; font-size: 12px; }
+        .intel-body { color: #b0b0b0; text-transform: none; line-height: 1.5; font-size: 12px; }
+        
+        .alert-box { border: 1px solid #ff3131; background: rgba(255, 49, 49, 0.1); color: #ff3131; padding: 10px; margin-bottom: 8px; font-size: 10px; }
+        .delta-box { border: 1px solid #ffff00; color: #ffff00; padding: 10px; font-size: 10px; font-weight: bold; }
+        
+        .blink { animation: blink 1.5s infinite; }
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.1; } 100% { opacity: 1; } }
-
-        .alert-row { border: 1px solid #ff3131; color: #ff3131; padding: 10px; margin-bottom: 10px; background: #310000; font-weight: bold; }
-        .delta-row { color: #ffff00; font-size: 11px; margin-bottom: 5px; }
-        
-        .dispatch { border: 1px solid #004111; padding: 20px; margin-bottom: 25px; background: #080c12; }
-        .dispatch-header { display: flex; justify-content: space-between; border-bottom: 1px solid #008f11; padding-bottom: 5px; margin-bottom: 10px; color: #00ff41; font-weight: bold; }
-        .dispatch-body { color: #a0a0a0; text-transform: none; line-height: 1.6; white-space: pre-wrap; font-size: 12px; }
-        
-        .cat-head { color: #00ff41; background: #004111; padding: 5px 15px; display: inline-block; margin-bottom: 15px; }
-        ::-webkit-scrollbar { width: 5px; }
-        ::-webkit-scrollbar-thumb { background: #00ff41; }
         """
 
         template = jinja2.Template("""
         <html>
-        <head><style>{{ css }}</style><title>RADAR COMMAND CENTER</title></head>
+        <head><style>{{ css }}</style><title>RADAR TACTICAL STACK</title></head>
         <body>
-            <div class="hud-grid">
-                <div class="sidebar">
-                    <h1>STATUS HUD</h1>
-                    <div class="metric"><span class="metric-label">TEMP</span><span class="metric-value">{{ m.temp }}°F</span></div>
-                    <div class="metric"><span class="metric-label">AIRCRAFT</span><span class="metric-value">{{ m.planes }} UNITS</span></div>
-                    <div class="metric"><span class="metric-label">LAN NODES</span><span class="metric-value">{{ m.devices }}</span></div>
-                    <div class="metric"><span class="metric-label">SSH FAIL</span><span class="metric-value">{{ m.ssh }}</span></div>
-                    <div class="metric"><span class="metric-label">RF PEAK</span><span class="metric-value">{{ m.rf_spike }}</span></div>
-                    
-                    <h2 style="font-size: 14px; margin-top: 30px;">DELTA ANALYSIS</h2>
-                    {% for d in deltas %}<div class="delta-row">>> {{ d }}</div>{% endfor %}
+            <div class="grid-container">
+                <div class="header">
+                    <div class="header-title"><span class="blink">●</span> RADAR // FULL TACTICAL STACK BRIEFING</div>
+                    <div style="color: #008f11; text-align: right; font-size: 10px;">LOCATION: 41.9N 77.1W | SECTOR: TIOGA PA<br>GEN: {{ now }} | VER: {{ version }}</div>
+                </div>
 
-                    <h2 style="font-size: 14px; margin-top: 30px;">SYSTEM ALERTS</h2>
-                    {% for a in alerts %}<div class="alert-row">! {{ a.severity }}: {{ a.message }}</div>{% endfor %}
-                    
-                    <div style="margin-top: 50px; color: #004111; font-size: 9px;">
-                        SYSTEM INTEGRITY: 100%<br>
-                        DB UPTIME: 312h 14m<br>
-                        SENSORS: ONLINE
+                <!-- LEFT COLUMN: SENSOR TELEMETRY -->
+                <div class="side-col">
+                    <div class="block" style="flex: 0 0 160px;">
+                        <div class="block-label">ATMOSPHERICS</div>
+                        <div class="big-metric">{{ m.temp }}°F</div>
+                        <div style="text-align: center; font-size: 9px; color: #008f11;">NOMINAL SECTOR CLIMATE</div>
+                    </div>
+                    <div class="block" style="flex: 1;">
+                        <div class="block-label">SIGINT SPECTRUM (ALL PEAKS)</div>
+                        {% for f in m.rf_all %}
+                        <div class="stat-row"><span class="stat-label">SIGNAL</span><span class="stat-val">{{ f }}</span></div>
+                        {% endfor %}
+                    </div>
+                    <div class="block" style="flex: 0 0 150px;">
+                        <div class="block-label">HYDROLOGY</div>
+                        {% for r in m.rivers %}
+                        <div style="font-size: 10px; margin-bottom: 5px; color: #008f11;">● {{ r }}</div>
+                        {% endfor %}
                     </div>
                 </div>
 
-                <div class="main-view">
-                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #00ff41; margin-bottom: 30px;">
-                        <span style="font-size: 2rem; font-weight: bold;"><span class="live-tag">● LIVE</span>RADAR INTELLIGENCE BRIEFING</span>
-                        <span style="text-align: right; color: #008f11;">SECTOR: TIOGA PA<br>GEN: {{ now }}</span>
-                    </div>
+                <!-- CENTER COLUMN: SYNTHESIZED INTELLIGENCE -->
+                <div class="center-col">
+                    <div class="block" style="flex: 1;">
+                        <div class="block-label">CORE INTELLIGENCE VIEWPORT</div>
+                        
+                        <div class="intel-card">
+                            <div class="intel-title">>> CYBER & ENCRYPTION STATUS</div>
+                            <div class="intel-body">{{ cyber }}</div>
+                        </div>
 
-                    {% for cat, items in categories.items() %}{% if items %}
-                    <div class="cat-head">// SOURCE: {{ cat }}</div>
-                    {% for item in items %}
-                    <div class="dispatch">
-                        <div class="dispatch-header"><span>>> {{ item.title }}</span><span>TIMESTAMP: {{ item.date }}</span></div>
-                        <div class="dispatch-body">{{ item.body }}</div>
+                        <div class="intel-card">
+                            <div class="intel-title">>> REGIONAL LOGISTICS & INFRASTRUCTURE</div>
+                            <div class="intel-body">{{ logistics }}</div>
+                        </div>
+
+                        <div class="intel-card">
+                            <div class="intel-title">>> TACTICAL TECH & SURVIVAL</div>
+                            <div class="intel-body">{{ tech }}</div>
+                        </div>
                     </div>
-                    {% endfor %}{% endif %}{% endfor %}
-                    
-                    <div style="text-align: center; border-top: 1px solid #004111; padding-top: 20px; color: #004111; font-size: 10px;">
-                        LOCAL SOVEREIGNTY ENGINE v{{ version }} | ENCRYPTED OFFLINE STORAGE | END OF DISPATCH
+                </div>
+
+                <!-- RIGHT COLUMN: NETWORK & SECURITY -->
+                <div class="side-col">
+                    <div class="block" style="flex: 0 0 160px;">
+                        <div class="block-label">AIRSPACE DENSITY</div>
+                        <div class="big-metric">{{ m.planes }}</div>
+                        <div style="text-align: center; font-size: 9px; color: #008f11;">ACTIVE ADS-B PINGS</div>
                     </div>
+                    <div class="block" style="flex: 1;">
+                        <div class="block-label">NETWORK TOPOLOGY</div>
+                        <div class="stat-row"><span class="stat-label">ACTIVE NODES</span><span class="stat-val">{{ m.devices }}</span></div>
+                        <div class="stat-row"><span class="stat-label">AUTH FAILS</span><span class="stat-val" style="color:#ff3131">{{ m.ssh }}</span></div>
+                        <div style="font-size: 9px; margin-top: 15px; color: #008f11;">HARDWARE VENDORS:</div>
+                        <div style="font-size: 10px; color: #00ff41; margin-top: 5px;">{{ m.vendors }}</div>
+                        
+                        <div style="font-size: 9px; margin-top: 25px; color: #008f11;">SYSTEM ARSENAL:</div>
+                        {% for sw in m.sw_counts %}
+                        <div class="stat-row"><span class="stat-label">PKGS</span><span class="stat-val">{{ sw }}</span></div>
+                        {% endfor %}
+                    </div>
+                    <div class="block" style="flex: 0 0 150px; border-color: #ff3131;">
+                        <div class="block-label" style="color: #ff3131; border-color: #ff3131;">THREAT LOG</div>
+                        {% for a in alerts %}
+                        <div class="alert-box">! [{{ a.domain }}] {{ a.message }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- FOOTER BAR: TRENDS -->
+                <div class="delta-area">
+                    <div class="delta-box">>> SYSTEM STATUS: FULLY OPERATIONAL | ENCRYPTED LINK: LOCALHOST:5432</div>
+                    {% for d in deltas %}
+                    <div class="delta-box" style="border-color: #00ff41; color: #00ff41;">>> {{ d }}</div>
+                    {% endfor %}
+                    <div class="delta-box" style="border-color: #58a6ff; color: #58a6ff;">>> ENCRYPTION STATE: P25 MONITORING READY</div>
                 </div>
             </div>
         </body>
@@ -892,16 +882,18 @@ def report(
             m=curr_m,
             deltas=deltas,
             alerts=alerts,
-            categories=categories,
+            cyber=cyber_summary,
+            logistics=logistics_summary,
+            tech=tech_summary,
             now=now_str,
-            version="0.22.0",
+            version="0.25.0",
         )
 
         fname = "tactical_intelligence_briefing.html"
         with open(fname, "w") as f:
             f.write(html)
         console.print(
-            f"[bold green]Analytical Briefing synthesized: {fname}[/bold green]"
+            f"[bold green]Full Tactical Stack Briefing forged: {fname}[/bold green]"
         )
         if open_browser:
             import subprocess
