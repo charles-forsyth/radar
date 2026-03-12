@@ -344,9 +344,7 @@ def sync(
                 )
 
                 agent = TacticalAgent()
-                sitrep_text = await agent.generate_full_sitrep(
-                    prev=prev_sitrep
-                )
+                sitrep_text = await agent.generate_full_sitrep(prev=prev_sitrep)
 
                 # --- ANOMALY DETECTION ---
                 intel = IntelligenceAgent()
@@ -685,11 +683,15 @@ def map():
             color="#3186cc",
             fill=True,
             fill_color="#3186cc",
-            fill_opacity=0.1
+            fill_opacity=0.1,
         ).add_to(m)
 
         # Add a precise home pin
-        folium.Marker(tioga_coords, popup="1539 Button Hill Road (Home Base)", icon=folium.Icon(color="green", icon="home")).add_to(m)
+        folium.Marker(
+            tioga_coords,
+            popup="1539 Button Hill Road (Home Base)",
+            icon=folium.Icon(color="green", icon="home"),
+        ).add_to(m)
 
         async with async_session() as session:
             # 1. Look for ADS-B coordinates in SITREPs
