@@ -656,17 +656,35 @@ def report(
             curr_tel = tel_results[0] if len(tel_results) > 0 else None
             prev_tel = tel_results[1] if len(tel_results) > 1 else None
 
-            # 2. Fetch Latest Rivers
+            # 2. Fetch Latest Rivers (and previous for delta)
             river_stmt = (
-                select(RiverLevel).order_by(desc(RiverLevel.timestamp)).limit(30)
+                select(RiverLevel).order_by(desc(RiverLevel.timestamp)).limit(60)
             )
             river_results = (await session.execute(river_stmt)).scalars().all()
-            latest_rivers = []
-            seen_stations = set()
+
+            station_data = {}
             for r in river_results:
-                if r.station_name not in seen_stations:
-                    seen_stations.add(r.station_name)
-                    latest_rivers.append(r)
+                if r.station_name not in station_data:
+                    station_data[r.station_name] = []
+                if len(station_data[r.station_name]) < 2:
+                    station_data[r.station_name].append(r)
+
+            latest_rivers = []
+            for name, items in station_data.items():
+                curr = items[0]
+                prev = items[1] if len(items) > 1 else None
+                delta = 0.0
+                if prev:
+                    delta = curr.value - prev.value
+
+                latest_rivers.append(
+                    {
+                        "station_name": name,
+                        "value": curr.value,
+                        "unit": curr.unit,
+                        "delta": delta,
+                    }
+                )
 
             # 3. Fetch Latest RF Peaks
             rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(10)
@@ -740,9 +758,14 @@ def report(
                         {% endfor %}
                     </div>
                     <div class="block" style="flex: 0 0 200px;">
-                        <div class="block-label">HYDROLOGY STATUS</div>
+                                                <div class="block-label">HYDROLOGY STATUS</div>
                         {% for r in rivers %}
-                        <div style="font-size: 11px; margin-bottom: 8px; color: #008f11;">● {{ r.station_name }}: {{ r.value }} {{ r.unit }}</div>
+                        <div style="font-size: 11px; margin-bottom: 8px; color: #008f11;">
+                            ● {{ r.station_name }}: {{ r.value }} {{ r.unit }}
+                            {% if r.delta != 0 %}
+                            <span style="color: #ffff00; font-size: 9px;">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span>
+                            {% endif %}
+                        </div>
                         {% endfor %}
                     </div>
                 </div>
