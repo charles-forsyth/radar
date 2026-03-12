@@ -374,6 +374,15 @@ def sync(
                             console.print(
                                 f"[bold red]TACTICAL ALERT [{domain}]:[/bold red] {msg}"
                             )
+                            
+                            # System Desktop Notification
+                            import subprocess
+                            try:
+                                urgency = "critical" if severity == "CRITICAL" else "normal"
+                                subprocess.run(["notify-send", "-u", urgency, f"Radar Alert: {domain}", msg], check=False)
+                            except Exception as notify_err:
+                                pass
+                                
                             if voice:
                                 alert_text = f"Captain, tactical anomaly detected in {domain} domain. {msg}"
                                 subprocess.run(
