@@ -24,6 +24,10 @@ from radar.db.models import (
     ChatSession,
     ChatMessage,
     TacticalAlert,
+    Telemetry,
+    RiverLevel,
+    RFPeak,
+    SoftwareInventory,
 )
 from sqlalchemy import select, desc
 
@@ -319,22 +323,9 @@ def sync(
                     "[bold blue]Executing Tactical SITREP Ingest...[/bold blue]"
                 )
 
-                # Fetch previous SITREP for delta analysis and baseline
-                prev_sitrep = None
+                # Fetch previous SITREP for baseline
                 baseline_sitreps = []
                 async with async_session() as session:
-                    # Previous for delta
-                    stmt = (
-                        select(Signal)
-                        .where(Signal.title.contains("SITREP"))
-                        .order_by(desc(Signal.date))
-                        .limit(1)
-                    )
-                    result = await session.execute(stmt)
-                    last_sig = result.scalar_one_or_none()
-                    if last_sig:
-                        prev_sitrep = last_sig.content
-
                     # Last 7 days for baseline
                     seven_days_ago = datetime.now() - timedelta(days=7)
                     baseline_stmt = (
@@ -355,7 +346,8 @@ def sync(
                 )
 
                 agent = TacticalAgent()
-                sitrep_text = await agent.generate_full_sitrep(prev=prev_sitrep)
+                snapshot = await agent.generate_snapshot()
+                sitrep_text = snapshot.raw_sitrep
 
                 # --- ANOMALY DETECTION ---
                 with console.status(
@@ -366,6 +358,35 @@ def sync(
                     )
 
                 async with async_session() as session:
+                    # 1. SAVE STRUCTURED TELEMETRY
+                    session.add(
+                        Telemetry(
+                            temp_f=snapshot.temp_f,
+                            aircraft_count=snapshot.aircraft_count,
+                            lan_device_count=snapshot.lan_device_count,
+                            ssh_failure_count=snapshot.ssh_failure_count,
+                            internet_latency_ms=snapshot.internet_latency_ms,
+                        )
+                    )
+
+                    for r in snapshot.rivers:
+                        session.add(
+                            RiverLevel(
+                                station_name=r["name"], value=r["value"], unit=r["unit"]
+                            )
+                        )
+
+                    for p in snapshot.rf_peaks:
+                        session.add(
+                            RFPeak(frequency_mhz=p["freq"], power_db=p["power"])
+                        )
+
+                    for manager, count in snapshot.software.items():
+                        session.add(
+                            SoftwareInventory(manager=manager, package_count=count)
+                        )
+
+                    # 2. SAVE ALERTS
                     for anomaly in anomalies:
                         severity = anomaly["severity"]
                         domain = anomaly["domain"]
@@ -383,7 +404,6 @@ def sync(
                                 f"[bold red]TACTICAL ALERT [{domain}]:[/bold red] {msg}"
                             )
 
-                            # System Desktop Notification
                             import subprocess
 
                             try:
@@ -621,171 +641,127 @@ def report(
         True, "--open", help="Open the report in browser."
     ),
 ):
-    """Generate a high-fidelity 'Clean Tactical' glass dashboard focusing purely on telemetry."""
+    """Generate a high-fidelity 'Structured Telemetry' glass dashboard querying relational tables."""
     import jinja2
     from sqlalchemy import select, desc
-    import re
     import asyncio
 
     async def _report():
-        console.print("[bold blue]Forging Clean Tactical Dashboard...[/bold blue]")
+        console.print("[bold blue]Forging Structured Tactical Dashboard...[/bold blue]")
 
         async with async_session() as session:
-            sitrep_stmt = (
-                select(Signal)
-                .where(Signal.title.contains("SITREP"))
-                .order_by(desc(Signal.date))
-                .limit(2)
-            )
-            sitreps = (await session.execute(sitrep_stmt)).scalars().all()
-            current_sitrep = sitreps[0] if len(sitreps) > 0 else None
-            prev_sitrep = sitreps[1] if len(sitreps) > 1 else None
+            # 1. Fetch Latest Telemetry
+            tel_stmt = select(Telemetry).order_by(desc(Telemetry.timestamp)).limit(2)
+            tel_results = (await session.execute(tel_stmt)).scalars().all()
+            curr_tel = tel_results[0] if len(tel_results) > 0 else None
+            prev_tel = tel_results[1] if len(tel_results) > 1 else None
 
+            # 2. Fetch Latest Rivers
+            river_stmt = (
+                select(RiverLevel).order_by(desc(RiverLevel.timestamp)).limit(30)
+            )
+            river_results = (await session.execute(river_stmt)).scalars().all()
+            latest_rivers = []
+            seen_stations = set()
+            for r in river_results:
+                if r.station_name not in seen_stations:
+                    seen_stations.add(r.station_name)
+                    latest_rivers.append(r)
+
+            # 3. Fetch Latest RF Peaks
+            rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(10)
+            rf_peaks = (await session.execute(rf_stmt)).scalars().all()
+
+            # 4. Fetch Software Arsenal
+            sw_stmt = (
+                select(SoftwareInventory)
+                .order_by(desc(SoftwareInventory.timestamp))
+                .limit(4)
+            )
+            sw_inv = (await session.execute(sw_stmt)).scalars().all()
+
+            # 5. Fetch Alerts
             alert_stmt = (
-                select(TacticalAlert)
-                .where(TacticalAlert.severity.in_(["WARNING", "CRITICAL"]))
-                .order_by(desc(TacticalAlert.created_at))
-                .limit(12)
+                select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(12)
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
-        def parse_deep_metrics(content):
-            m = {
-                "temp": "N/A",
-                "devices": 0,
-                "planes": 0,
-                "ssh": 0,
-                "rf_spike": "N/A",
-                "rivers": [],
-                "vendors": "None",
-                "sw_counts": [],
-                "rf_all": [],
-            }
-            if not content:
-                return m
-
-            t = re.search(r"(\\d+\\.\d+)°F", content)
-            if t:
-                m["temp"] = t.group(1)
-            d = re.search(r"Local LAN Devices \(ARP\):\\*\\* (\\d+)", content)
-            if d:
-                m["devices"] = int(d.group(1))
-            m["planes"] = len(re.findall(r"Flight ", content))
-            s = re.search(r"Failed SSH Logins \(Auth\):\\*\\* (\\d+)", content)
-            if s:
-                m["ssh"] = int(s.group(1))
-
-            rf_matches = re.findall(
-                r"Frequency: ([\\d\\.]+) MHz \\| Power: ([\\d\\.]+) dB", content
-            )
-            m["rf_all"] = [f"{f} MHz ({p} dB)" for f, p in rf_matches]
-
-            river_lines = re.findall(r"- (.* River at .*?: .*? (?:ft|cfs))", content)
-            m["rivers"] = river_lines[:6]
-
-            v = re.search(r"Identified Hardware:\\*\\* (.*)\\n", content)
-            if v:
-                m["vendors"] = v.group(1)
-
-            sw = re.findall(
-                r"- \\*\\*(?:APT|pip|uv|micromamba).*?\\*\\* (\\d+)", content
-            )
-            labels = ["APT", "PIP", "UV", "MAMBA"]
-            m["sw_counts"] = [f"{label}: {c}" for label, c in zip(labels, sw)]
-
-            return m
-
-        curr_m = parse_deep_metrics(current_sitrep.content) if current_sitrep else {}
-        prev_m = parse_deep_metrics(prev_sitrep.content) if prev_sitrep else {}
-
+        # Prep deltas
         deltas = []
-        if curr_m and prev_m:
-            if curr_m["devices"] != prev_m["devices"]:
+        if curr_tel and prev_tel:
+            if curr_tel.lan_device_count != prev_tel.lan_device_count:
+                diff = curr_tel.lan_device_count - prev_tel.lan_device_count
+                deltas.append(f"Subnet: {'+' if diff > 0 else ''}{diff} nodes.")
+            if curr_tel.ssh_failure_count > prev_tel.ssh_failure_count:
                 deltas.append(
-                    f"Subnet Delta: {curr_m['devices'] - prev_m['devices']} nodes."
+                    f"Intrusions: +{curr_tel.ssh_failure_count - prev_tel.ssh_failure_count} SSH fails."
                 )
-            if curr_m["ssh"] > prev_m["ssh"]:
-                deltas.append(
-                    f"Intrusion Risk: +{curr_m['ssh'] - prev_m['ssh']} SSH fails."
-                )
-            if abs(curr_m["planes"] - prev_m["planes"]) > 3:
-                deltas.append(f"Traffic Shift: {curr_m['planes']} sector units.")
+            if abs(curr_tel.aircraft_count - prev_tel.aircraft_count) > 2:
+                deltas.append(f"Airspace: {curr_tel.aircraft_count} active units.")
 
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap');
         body { background-color: #05070a; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; overflow-x: hidden; }
-        
         .grid-container { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 60px 1fr 120px; gap: 15px; height: calc(100vh - 30px); }
-        
         .header { grid-column: 1 / span 2; border: 1px solid #00ff41; display: flex; justify-content: space-between; align-items: center; padding: 0 25px; background: #00ff4111; }
         .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.4rem; font-weight: bold; text-shadow: 0 0 10px #00ff41; }
-        
         .block { border: 1px solid #00ff41; background: #080c12; padding: 20px; position: relative; overflow-y: auto; }
         .block-label { position: absolute; top: -9px; left: 15px; background: #05070a; padding: 0 8px; color: #00ff41; font-weight: bold; font-size: 10px; border: 1px solid #00ff41; }
-        
         .col { display: flex; flex-direction: column; gap: 15px; }
-        
         .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #004111; padding: 8px 0; }
         .stat-label { color: #008f11; font-size: 10px; }
         .stat-val { font-weight: bold; }
-        
         .big-metric { font-size: 3.5rem; font-weight: bold; text-align: center; margin: 20px 0; text-shadow: 0 0 20px #00ff41; }
-        
         .alert-box { border: 1px solid #ff3131; background: rgba(248, 81, 73, 0.1); color: #ff3131; padding: 10px; margin-bottom: 8px; font-size: 10px; }
-        .delta-box { border: 1px solid #ffff00; color: #ffff00; padding: 10px; font-size: 10px; font-weight: bold; }
-        
         .blink { animation: blink 1.5s infinite; }
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.1; } 100% { opacity: 1; } }
         """
 
         template = jinja2.Template("""
         <html>
-        <head><style>{{ css }}</style><title>RADAR TACTICAL HUD</title></head>
+        <head><style>{{ css }}</style><title>RADAR STRUCTURED HUD</title></head>
         <body>
             <div class="grid-container">
                 <div class="header">
-                    <div class="header-title"><span class="blink">●</span> RADAR // TACTICAL TELEMETRY HUD</div>
-                    <div style="color: #008f11; text-align: right; font-size: 10px;">LOCATION: 41.9N 77.1W | SECTOR: TIOGA PA<br>GEN: {{ now }} | VER: {{ version }}</div>
+                    <div class="header-title"><span class="blink">●</span> RADAR // STRUCTURED TELEMETRY HUD</div>
+                    <div style="color: #008f11; text-align: right; font-size: 10px;">SECTOR: TIOGA PA | RELATIONAL DB: POSTGRESQL<br>GEN: {{ now }} | VER: {{ version }}</div>
                 </div>
 
-                <!-- LEFT COLUMN: SENSOR TELEMETRY -->
                 <div class="col">
                     <div class="block" style="flex: 0 0 200px;">
                         <div class="block-label">ATMOSPHERICS</div>
-                        <div class="big-metric">{{ m.temp }}°F</div>
-                        <div style="text-align: center; font-size: 10px; color: #008f11;">NOMINAL SECTOR CLIMATE BASELINE</div>
+                        <div class="big-metric">{{ t.temp_f }}°F</div>
+                        <div style="text-align: center; font-size: 10px; color: #008f11;">STRUCTURED SENSOR DATA</div>
                     </div>
                     <div class="block" style="flex: 1;">
-                        <div class="block-label">SIGINT SPECTRUM (PEAK ANALYSIS)</div>
-                        {% for f in m.rf_all %}
-                        <div class="stat-row"><span class="stat-label">SIGNAL</span><span class="stat-val">{{ f }}</span></div>
+                        <div class="block-label">SIGINT SPECTRUM PEAKS</div>
+                        {% for f in rf %}
+                        <div class="stat-row"><span class="stat-label">SIGNAL</span><span class="stat-val">{{ f.frequency_mhz }} MHz ({{ f.power_db }} dB)</span></div>
                         {% endfor %}
                     </div>
                     <div class="block" style="flex: 0 0 200px;">
-                        <div class="block-label">HYDROLOGY BOARD</div>
-                        {% for r in m.rivers %}
-                        <div style="font-size: 11px; margin-bottom: 8px; color: #008f11;">● {{ r }}</div>
+                        <div class="block-label">HYDROLOGY STATUS</div>
+                        {% for r in rivers %}
+                        <div style="font-size: 11px; margin-bottom: 8px; color: #008f11;">● {{ r.station_name }}: {{ r.value }} {{ r.unit }}</div>
                         {% endfor %}
                     </div>
                 </div>
 
-                <!-- RIGHT COLUMN: NETWORK & SECURITY -->
                 <div class="col">
                     <div class="block" style="flex: 0 0 200px;">
                         <div class="block-label">AIRSPACE DENSITY</div>
-                        <div class="big-metric">{{ m.planes }}</div>
-                        <div style="text-align: center; font-size: 10px; color: #008f11;">ACTIVE ADS-B TRANSPONDER PINGS</div>
+                        <div class="big-metric">{{ t.aircraft_count }}</div>
+                        <div style="text-align: center; font-size: 10px; color: #008f11;">ACTIVE ADS-B PINGS</div>
                     </div>
                     <div class="block" style="flex: 1;">
                         <div class="block-label">NETWORK & SOFTWARE TOPOLOGY</div>
-                        <div class="stat-row"><span class="stat-label">ACTIVE NODES</span><span class="stat-val">{{ m.devices }}</span></div>
-                        <div class="stat-row"><span class="stat-label">AUTH FAILS</span><span class="stat-val" style="color:#ff3131">{{ m.ssh }}</span></div>
-                        <div style="font-size: 10px; margin-top: 20px; color: #008f11;">HARDWARE VENDORS:</div>
-                        <div style="font-size: 11px; color: #00ff41; margin-top: 10px; border: 1px dashed #004111; padding: 10px;">{{ m.vendors }}</div>
+                        <div class="stat-row"><span class="stat-label">ACTIVE NODES</span><span class="stat-val">{{ t.lan_device_count }}</span></div>
+                        <div class="stat-row"><span class="stat-label">AUTH FAILS</span><span class="stat-val" style="color:#ff3131">{{ t.ssh_failure_count }}</span></div>
+                        <div class="stat-row"><span class="stat-label">NET LATENCY</span><span class="stat-val">{{ t.internet_latency_ms }} ms</span></div>
                         
                         <div style="font-size: 10px; margin-top: 30px; color: #008f11;">SYSTEM SOFTWARE ARSENAL:</div>
-                        {% for sw in m.sw_counts %}
-                        <div class="stat-row"><span class="stat-label">PACKAGE MANAGER</span><span class="stat-val">{{ sw }}</span></div>
+                        {% for s in sw %}
+                        <div class="stat-row"><span class="stat-label">{{ s.manager.upper() }}</span><span class="stat-val">{{ s.package_count }} PKGS</span></div>
                         {% endfor %}
                     </div>
                     <div class="block" style="flex: 0 0 200px; border-color: #ff3131;">
@@ -798,7 +774,6 @@ def report(
                     </div>
                 </div>
 
-                <!-- FOOTER BAR -->
                 <div style="grid-column: 1 / span 2; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
                     <div class="block" style="border-color: #ffff00; color: #ffff00; padding: 12px;">
                         <div style="font-size: 9px; margin-bottom: 5px;">TACTICAL SHIFTS</div>
@@ -821,18 +796,21 @@ def report(
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         html = template.render(
             css=report_css,
-            m=curr_m,
+            t=curr_tel,
+            rivers=latest_rivers,
+            rf=rf_peaks,
+            sw=sw_inv,
             deltas=deltas,
             alerts=alerts,
             now=now_str,
-            version="0.26.0",
+            version="0.27.0",
         )
 
         fname = "tactical_intelligence_briefing.html"
         with open(fname, "w") as f:
             f.write(html)
         console.print(
-            f"[bold green]Clean Tactical Dashboard forged: {fname}[/bold green]"
+            f"[bold green]Structured Tactical Dashboard forged: {fname}[/bold green]"
         )
         if open_browser:
             import subprocess
