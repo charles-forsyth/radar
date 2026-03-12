@@ -1,12 +1,20 @@
-import asyncio
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, VerticalScroll, Vertical
-from textual.widgets import Header, Footer, Static, Input, Log, Label, ListItem, ListView
-from textual.reactive import reactive
+from textual.containers import Horizontal, Vertical
+from textual.widgets import (
+    Header,
+    Footer,
+    Static,
+    Input,
+    Log,
+    Label,
+    ListItem,
+    ListView,
+)
 from radar.db.engine import async_session
 from radar.db.models import Signal, TacticalAlert
 from sqlalchemy import select, desc
 import textwrap
+
 
 class SignalItem(ListItem):
     def __init__(self, title: str, content: str):
@@ -16,6 +24,7 @@ class SignalItem(ListItem):
 
     def compose(self) -> ComposeResult:
         yield Label(f"📡 {self.signal_title}", classes="signal-title")
+
 
 class RadarApp(App):
     """A Textual dashboard for Radar Intelligence."""
@@ -70,11 +79,11 @@ class RadarApp(App):
             with Vertical(id="alert-pane", classes="panel"):
                 yield Label("⚠️ Tactical Alerts", classes="panel-header")
                 yield Log(id="alert-log")
-        
+
         with Vertical(id="detail-pane"):
             yield Label("📄 Document Viewer", classes="panel-header")
             yield Static(id="document-content")
-            
+
         yield Input(placeholder="Search the local corpus (BM25s)...", id="search-input")
         yield Footer()
 
@@ -83,20 +92,24 @@ class RadarApp(App):
         try:
             async with async_session() as session:
                 # Get Signals
-                stmt = select(Signal).order_by(desc(Signal.date)).limit(50)
+                stmt = select(Signal).order_by(desc(Signal.date)).limit(50)  # type: ignore
                 results = await session.execute(stmt)
                 signals = results.scalars().all()
-                
+
                 list_view = self.query_one("#signal-list", ListView)
                 await list_view.clear()
                 for s in signals:
                     await list_view.append(SignalItem(s.title, s.content))
-                    
+
                 # Get Alerts
-                astmt = select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(20)
+                astmt = (
+                    select(TacticalAlert)
+                    .order_by(desc(TacticalAlert.created_at)) # type: ignore
+                    .limit(20)
+                )
                 aresults = await session.execute(astmt)
                 alerts = aresults.scalars().all()
-                
+
                 alert_log = self.query_one("#alert-log", Log)
                 alert_log.clear()
                 for a in reversed(alerts):
@@ -119,8 +132,11 @@ class RadarApp(App):
         viewer = self.query_one("#document-content", Static)
         if not query.strip():
             return
-            
-        viewer.update(f"Searching BM25 index for: {query}\n[Implement BM25s hook here...]")
+
+        viewer.update(
+            f"Searching BM25 index for: {query}\n[Implement BM25s hook here...]"
+        )
+
 
 if __name__ == "__main__":
     app = RadarApp()
