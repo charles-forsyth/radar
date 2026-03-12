@@ -162,10 +162,12 @@ class IntelligenceAgent:
                 is_sitrep_doc = "SITREP" in sig.title.upper()
 
                 boost = 1.0
-                if is_sitrep_doc and (is_sitrep_query_keywords or is_current_condition_query):
-                    boost = 100.0 # Extremely high priority for current tactical situational awareness
+                if is_sitrep_doc and (
+                    is_sitrep_query_keywords or is_current_condition_query
+                ):
+                    boost = 100.0  # Extremely high priority for current tactical situational awareness
                 elif is_sitrep_doc:
-                    boost = 5.0 # General sitrep boost (even without specific query keywords)
+                    boost = 5.0  # General sitrep boost (even without specific query keywords)
 
                 final_score = effective_score * decay * boost
                 adjusted_scores.append((final_score, sig))
