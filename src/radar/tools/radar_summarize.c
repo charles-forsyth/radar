@@ -22,8 +22,10 @@ int main(int argc, char *argv[]) {
     int total_content_lines = 0;
     int current_title_printed = 0;
     char current_title[MAX_BUFFER] = "";
+    int line_limit = 3; // Default limit
+    int is_sitrep = 0;
     
-    while (fgets(buffer, MAX_BUFFER, stdin) != NULL && line_count < 20) {
+    while (fgets(buffer, MAX_BUFFER, stdin) != NULL && line_count < 30) {
         
         char *p = buffer;
         while (*p == ' ' || *p == '\t' || *p == '-') p++;
@@ -34,10 +36,8 @@ int main(int argc, char *argv[]) {
             query[strcspn(query, "\n")] = 0;
             to_lowercase(query);
             
-            // Tokenize query
             char *token = strtok(query, " ?.,");
             while (token != NULL && word_count < 10) {
-                // Lowered from >3 to >2 to catch more keywords
                 if (strlen(token) > 2) {
                     strncpy(words[word_count++], token, 63);
                 }
@@ -64,30 +64,29 @@ int main(int argc, char *argv[]) {
                 strncmp(p, "Target:", 7) != 0 &&
                 strlen(p) > 10) {
                 
-                if (strncmp(p, "Title:", 6) == 0) {
-                    strncpy(current_title, p + 7, MAX_BUFFER);
-                    current_title[strcspn(current_title, "\n")] = 0; // remove newline
-                    current_title_printed = 0;
-                    content_lines = 0; // Reset for new document
-                } else if (strncmp(p, "Source:", 7) == 0) {
-                    // Treat Source as a title for Deep Research outputs
-                    strncpy(current_title, p + 8, MAX_BUFFER);
-                    current_title[strcspn(current_title, "\n")] = 0;
-                    
-                    // Strip the trailing " ---" if it exists
-                    char *dash = strstr(current_title, " ---");
-                    if (dash != NULL) {
-                        *dash = '\0';
-                    }
-                    
-                    current_title_printed = 0;
-                    content_lines = 0;
-                } else {
-                    // Since the Python BM25 engine already ranked the documents for relevance, 
-                    // we just need to extract the 3 best lines from each document.
-                    if (content_lines < 3) {
+                if (strncmp(p, "Title:", 6) == 0 || strncmp(p, "Source:", 7) == 0) {
+                    // Only update title if it's a real title or we don't have one yet
+                    if (p[0] == 'T' || strlen(current_title) == 0) {
+                        int offset = (p[0] == 'T') ? 7 : 8;
+                        strncpy(current_title, p + offset, MAX_BUFFER);
+                        current_title[strcspn(current_title, "\n")] = 0;
                         
-                        // Check if the string contains a digit
+                        char *dash = strstr(current_title, " ---");
+                        if (dash != NULL) *dash = '\0';
+
+                        if (strstr(current_title, "SITREP") != NULL) {
+                            line_limit = 15;
+                            is_sitrep = 1;
+                        } else {
+                            line_limit = 3;
+                            is_sitrep = 0;
+                        }
+                    }
+                    // Reset content lines for the document, but don't clear the 'sitrep' status
+                    content_lines = 0;
+                    current_title_printed = 0;
+                } else {
+                    if (content_lines < line_limit) {
                         int has_digit = 0;
                         for (int i = 0; p[i]; i++) {
                             if (isdigit(p[i])) {
@@ -96,13 +95,10 @@ int main(int argc, char *argv[]) {
                             }
                         }
 
-                        // Skip printing lines that are just short markdown headers, 
-                        // UNLESS they contain numbers (like flight altitudes)
                         if (strlen(p) < 40 && (p[0] == '#' || p[0] == '*' || p[0] == '-') && !has_digit) {
                             continue;
                         }
 
-                        // Skip generic fluff lines
                         if (strlen(p) < 60 && !has_digit) {
                             continue;
                         }
@@ -125,7 +121,8 @@ int main(int argc, char *argv[]) {
                         printf("  - %s\n", display_p);
                         content_lines++;
                         total_content_lines++;
-                    }                }
+                    }
+                }
             }
         }
     }

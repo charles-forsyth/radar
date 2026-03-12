@@ -391,7 +391,38 @@ class DeepResearchAgent:
                             url, wait_until="domcontentloaded", timeout=30000
                         )
                         await asyncio.sleep(3)
-                        content = await page.evaluate("() => document.body.innerText")
+                        # --- SMART CONTENT EXTRACTION ---
+                        content = await page.evaluate("""() => {
+                            // 1. Remove obvious noise
+                            const noiseSelectors = [
+                                'nav', 'footer', 'header', 'aside', 'script', 'style', 
+                                '.ads', '.sidebar', '.menu', '.cookie', '.popup', '.social'
+                            ];
+                            noiseSelectors.forEach(s => {
+                                document.querySelectorAll(s).forEach(el => el.remove());
+                            });
+
+                            // 2. Identify the main content container
+                            // Heuristic: The element with the most text density
+                            let mainElement = document.body;
+                            const containers = document.querySelectorAll('article, main, .content, .post, .article');
+                            if (containers.length > 0) {
+                                let maxLen = 0;
+                                containers.forEach(c => {
+                                    if (c.innerText.length > maxLen) {
+                                        maxLen = c.innerText.length;
+                                        mainElement = c;
+                                    }
+                                });
+                            }
+                            
+                            // 3. Extract and clean text
+                            return mainElement.innerText.split('\\n')
+                                .map(line => line.trim())
+                                .filter(line => line.length > 50) // Filter out menu-like snippets
+                                .join('\\n');
+                        }""")
+                        # ---------------------------------
                     if content:
                         combined_text += f"\n--- Source: {url} ---\n{content[:5000]}"
                 except Exception:
@@ -461,9 +492,39 @@ class BrowserIngestAgent:
                             extracted_feeds
                         )
                     else:
-                        content = await page.evaluate("() => document.body.innerText")
+                        content = await page.evaluate("""() => {
+                            const noiseSelectors = ['nav', 'footer', 'header', 'aside', 'script', 'style', '.ads', '.sidebar', '.menu', '.cookie'];
+                            noiseSelectors.forEach(s => document.querySelectorAll(s).forEach(el => el.remove()));
+                            let mainElement = document.body;
+                            const containers = document.querySelectorAll('article, main, .content, .post');
+                            if (containers.length > 0) {
+                                let maxLen = 0;
+                                containers.forEach(c => {
+                                    if (c.innerText.length > maxLen) {
+                                        maxLen = c.innerText.length;
+                                        mainElement = c;
+                                    }
+                                });
+                            }
+                            return mainElement.innerText.split('\\n').map(line => line.trim()).filter(line => line.length > 40).join('\\n');
+                        }""")
                 else:
-                    content = await page.evaluate("() => document.body.innerText")
+                    content = await page.evaluate("""() => {
+                        const noiseSelectors = ['nav', 'footer', 'header', 'aside', 'script', 'style', '.ads', '.sidebar', '.menu', '.cookie'];
+                        noiseSelectors.forEach(s => document.querySelectorAll(s).forEach(el => el.remove()));
+                        let mainElement = document.body;
+                        const containers = document.querySelectorAll('article, main, .content, .post');
+                        if (containers.length > 0) {
+                            let maxLen = 0;
+                            containers.forEach(c => {
+                                if (c.innerText.length > maxLen) {
+                                    maxLen = c.innerText.length;
+                                    mainElement = c;
+                                }
+                            });
+                        }
+                        return mainElement.innerText.split('\\n').map(line => line.trim()).filter(line => line.length > 40).join('\\n');
+                    }""")
 
                 if (
                     len(content) < 500 or "map" in url.lower()
