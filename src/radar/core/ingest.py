@@ -35,6 +35,8 @@ class IntelligenceAgent:
         """Hybrid Search using local BM25s, prioritized by date with deduplication."""
         from sqlalchemy import select, desc
         import bm25s
+        import logging
+        logging.getLogger("bm25s").setLevel(logging.WARNING)
 
         async with async_session() as session:
             stmt = select(Signal).order_by(desc(Signal.date)).limit(500)
@@ -54,13 +56,39 @@ class IntelligenceAgent:
             
             corpus = [f"{s.title}\n{s.content}" for s in unique_signals]
             retriever = bm25s.BM25()
-            corpus_tokens = bm25s.tokenize(corpus, stopwords="en")
-            retriever.index(corpus_tokens)
-            
-            query_tokens = bm25s.tokenize([query], stopwords="en")
-            doc_indices, scores = retriever.retrieve(query_tokens, k=min(limit, len(unique_signals)))
-            
-            return [unique_signals[int(idx)] for idx in doc_indices[0]]
+            corpus_tokens = bm25s.tokenize(corpus, stopwords="en", show_progress=False)
+            retriever.index(corpus_tokens, show_progress=False)
+            # Query
+            query_tokens = bm25s.tokenize([query], stopwords="en", show_progress=False)
+            doc_indices, scores = retriever.retrieve(query_tokens, k=min(limit, len(unique_signals)), show_progress=False)
+
+            # Apply time decay penalty to prioritize fresh data
+            import numpy as np
+            from datetime import timezone
+
+            now = datetime.now(timezone.utc)
+            adjusted_scores = []
+
+            for i, idx in enumerate(doc_indices[0]):
+                sig = unique_signals[int(idx)]
+                # Ensure timezone awareness for subtraction
+                sig_date = sig.date.replace(tzinfo=timezone.utc) if sig.date.tzinfo is None else sig.date
+                age_hours = (now - sig_date).total_seconds() / 3600.0
+
+                # Decay factor: halve the score every 24 hours
+                decay = np.exp(-np.log(2) * age_hours / 24.0)
+
+                # Apply a massive boost if it's a TACTICAL SITREP, since that is usually what users want when asking for "situation"
+                # And check if the query specifically asks for 'tactical'
+                is_tactical = 10.0 if ("TACTICAL SITREP" in sig.title.upper() and "tactical" in query.lower()) else 1.0
+
+                final_score = scores[0][i] * decay * is_tactical
+                adjusted_scores.append((final_score, sig))
+
+            # Sort by new adjusted score
+            adjusted_scores.sort(key=lambda x: x[0], reverse=True)
+
+            return [s for score, s in adjusted_scores]
 
     def _run_tool(self, tool: str, text: str) -> str:
         try:
