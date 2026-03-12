@@ -104,17 +104,35 @@ class IntelligenceAgent:
         import re
 
         stats = []
-        # 1. Currency (e.g., $4.50)
-        currency = re.findall(r"\$([0-9,]+\.?\d*)", text)
-        for val in currency:
+
+        # NEW: Gas/Fuel Price specific patterns (e.g. Gas: $3.45)
+        gas_prices = re.findall(
+            r"(?:Gas|Fuel|Gasoline):\s*\$([0-9,]+\.?\d*)", text, re.IGNORECASE
+        )
+        for val in gas_prices:
             try:
                 stats.append(
                     {
-                        "label": "Price/Value",
+                        "label": "Gas Price",
                         "value": float(val.replace(",", "")),
                         "unit": "USD",
                     }
                 )
+            except ValueError:
+                continue
+
+        # 1. General Currency (e.g., $4.50) - skip if already caught as gas price
+        currency = re.findall(r"\$([0-9,]+\.?\d*)", text)
+        for val in currency:
+            try:
+                f_val = float(val.replace(",", ""))
+                # Simple check to avoid duplicates if caught by specific patterns above
+                if not any(
+                    s["value"] == f_val and s["label"] == "Gas Price" for s in stats
+                ):
+                    stats.append(
+                        {"label": "Price/Value", "value": f_val, "unit": "USD"}
+                    )
             except ValueError:
                 continue
 
