@@ -671,30 +671,36 @@ def report(
         True, "--open", help="Open the report in browser."
     ),
 ):
-    """Generate an elite 'Pure Stats' tactical command center report focusing purely on data."""
+    """Generate the ultimate 'Unified Command Center' report merging all stats and intelligence."""
     import jinja2
     from sqlalchemy import select, desc
+    import re
     import asyncio
 
     async def _report():
-        console.print(
-            "[bold blue]Forging v0.34 Pure Stats Command Center...[/bold blue]"
-        )
+        console.print("[bold blue]Forging v0.35 Unified Command Center...[/bold blue]")
+
+        from radar.core.ingest import IntelligenceAgent
+
+        intel = IntelligenceAgent()
 
         async with async_session() as session:
-            # 1. Fetch Relational Data
+            # 1. Telemetry
             tel_stmt = select(Telemetry).order_by(desc(Telemetry.timestamp)).limit(2)
             tel_results = (await session.execute(tel_stmt)).scalars().all()
             curr_tel = tel_results[0] if len(tel_results) > 0 else None
 
+            # 2. Rivers
             river_stmt = (
                 select(RiverLevel).order_by(desc(RiverLevel.timestamp)).limit(60)
             )
             river_results = (await session.execute(river_stmt)).scalars().all()
 
+            # 3. RF Peaks
             rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(30)
             rf_peaks_all = (await session.execute(rf_stmt)).scalars().all()
 
+            # 4. Software
             sw_stmt = (
                 select(SoftwareInventory)
                 .order_by(desc(SoftwareInventory.timestamp))
@@ -702,24 +708,35 @@ def report(
             )
             sw_all = (await session.execute(sw_stmt)).scalars().all()
 
+            # 5. Alerts
             alert_stmt = (
                 select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(15)
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
+            # 6. Strategic Stats
             stats_stmt = (
                 select(Statistic).order_by(desc(Statistic.timestamp)).limit(100)
             )
             all_stats = (await session.execute(stats_stmt)).scalars().all()
 
-        # --- DATA SYNTHESIS ---
+            # 7. Narrative Intelligence (Dispatches)
+            research_stmt = (
+                select(Signal)
+                .where(Signal.title.contains("Deep Research"))
+                .order_by(desc(Signal.date))
+                .limit(6)
+            )
+            research_signals = (await session.execute(research_stmt)).scalars().all()
+
+        # --- SYNTHESIS LOGIC ---
 
         # Security Score
         ssh_count = curr_tel.ssh_failure_count if curr_tel else 0
         alert_count = len([a for a in alerts if a.severity in ["WARNING", "CRITICAL"]])
         sec_score = max(0, 100 - (ssh_count * 1.5) - (alert_count * 10))
 
-        # Rivers
+        # Hydrology
         station_data = {}
         for r in river_results:
             if r.station_name not in station_data:
@@ -738,7 +755,7 @@ def report(
                 }
             )
 
-        # RF Peaks
+        # SIGINT
         peak_map = {}
         for r in rf_peaks_all:
             f_key = round(r.frequency_mhz, 1)
@@ -758,7 +775,7 @@ def report(
             )
         processed_rf.sort(key=lambda x: x["db"], reverse=True)
 
-        # Research Stats
+        # Strategic Data Wall
         stats_map = {}
         for s in all_stats:
             key = (s.category, s.label)
@@ -781,96 +798,110 @@ def report(
                 }
             )
 
-        # Software
-        sw_map = {}
-        for s in sw_all:
-            if s.manager not in sw_map:
-                sw_map[s.manager] = []
-            if len(sw_map[s.manager]) < 2:
-                sw_map[s.manager].append(s)
-        latest_sw = []
-        for m, items in sw_map.items():
-            curr, prev = items[0], (items[1] if len(items) > 1 else None)
-            latest_sw.append(
-                {
-                    "manager": m.upper(),
-                    "count": curr.package_count,
-                    "delta": curr.package_count - prev.package_count if prev else 0,
-                }
+        # Narrative Synthesis
+        async def synthesize_vignette(signal):
+            prompt = f"Extract the single most critical intelligence finding from {signal.title}. Factual and concise."
+            summary = intel._run_tool(
+                intel.summarize_bin, f"Question: {prompt}\nContext: {signal.content}"
             )
+            return re.sub(r"🎯.*?\\n|📌.*?\\n", "", summary).strip()
 
+        with console.status(
+            "[bold cyan]Synthesizing tactical vignettes...[/bold cyan]"
+        ):
+            tasks = [synthesize_vignette(s) for s in research_signals]
+            summaries = await asyncio.gather(*tasks)
+            vignettes = []
+            for s, summary in zip(research_signals, summaries):
+                vignettes.append(
+                    {
+                        "title": s.title.replace("Deep Research - ", "").upper(),
+                        "body": summary,
+                    }
+                )
+
+        # --- UI DESIGN ---
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=JetBrains+Mono:wght@400;700&display=swap');
-        body { background-color: #030508; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
-        .glass-grid { display: grid; grid-template-columns: 350px 1fr 350px; gap: 15px; height: auto; }
-        .header { grid-column: 1 / span 3; border: 2px solid #00ff41; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; background: #00ff4111; margin-bottom: 15px; }
-        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.5rem; font-weight: 900; }
-        .box { border: 1px solid #00ff41; background: #080c12; padding: 15px; position: relative; margin-bottom: 15px; box-shadow: inset 0 0 10px #00ff4111; overflow-y: auto; }
+        body { background-color: #030508; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; overflow-y: auto; }
+        .unified-grid { display: grid; grid-template-columns: 320px 1fr 320px; gap: 15px; }
+        .header { grid-column: 1 / span 3; border: 2px solid #00ff41; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; background: #00ff4111; margin-bottom: 10px; }
+        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.4rem; font-weight: 900; }
+        .box { border: 1px solid #00ff41; background: #080c12; padding: 15px; position: relative; margin-bottom: 15px; box-shadow: inset 0 0 10px #00ff4111; }
         .box-label { position: absolute; top: -10px; left: 15px; background: #030508; border: 1px solid #00ff41; padding: 0 8px; color: #00ff41; font-weight: bold; font-size: 9px; }
-        .big-val { font-size: 2.8rem; font-weight: 900; text-align: center; text-shadow: 0 0 15px #00ff41; margin: 5px 0; }
+        .big-metric { font-size: 2.5rem; font-weight: 900; text-align: center; text-shadow: 0 0 15px #00ff41; margin: 5px 0; }
         .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #002105; padding: 6px 0; }
         .stat-label { color: #008f11; }
+        .data-card { border: 1px solid #004111; background: #0a0f18; padding: 10px; margin-bottom: 5px; }
+        .vignette { border-left: 3px solid #00ff41; padding-left: 15px; margin-bottom: 20px; }
+        .vignette-title { font-weight: bold; color: #00ff41; margin-bottom: 5px; border-bottom: 1px solid #004111; padding-bottom: 3px; }
+        .vignette-body { color: #a0a0a0; text-transform: none; line-height: 1.4; font-size: 11px; }
         .trend-up { color: #ff3131; } .trend-down { color: #39d353; }
-        .cat-head { color: #000; background: #00ff41; padding: 2px 8px; font-weight: bold; font-size: 9px; margin-top: 15px; margin-bottom: 10px; display: inline-block; }
         .pulse { animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: #00ff41; }
         """
 
         template = jinja2.Template("""
         <html>
-        <head><style>{{ css }}</style><title>RADAR PURE STATS HUD</title></head>
+        <head><style>{{ css }}</style><title>RADAR UNIFIED COMMAND</title></head>
         <body>
             <div class="header">
-                <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // PURE TELEMETRY</div>
+                <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // UNIFIED INTELLIGENCE</div>
                 <div style="text-align: right; font-weight: bold;">SECTOR: TIOGA PA | {{ now }} | v{{ version }}</div>
             </div>
             
-            <div class="glass-grid">
-                <!-- LEFT: SECTOR STATUS -->
+            <div class="unified-grid">
+                <!-- LEFT: TACTICAL STATUS -->
                 <div class="col">
                     <div class="box">
                         <div class="box-label">ATMOSPHERICS</div>
-                        <div class="big-val">{{ tel.temp_f }}°F</div>
-                        <div style="text-align: center; color: #008f11; font-weight: bold;">SECTOR CLIMATE BASELINE</div>
+                        <div class="big-metric">{{ tel.temp_f }}°F</div>
                     </div>
                     <div class="box">
                         <div class="box-label">SECURITY INTEGRITY</div>
-                        <div class="big-val" style="color: {% if score > 80 %}#00ff41{% elif score > 50 %}#ffff00{% else %}#ff3131{% endif %};">{{ score }}%</div>
+                        <div class="big-metric" style="color: {% if score > 80 %}#00ff41{% elif score > 50 %}#ffff00{% else %}#ff3131{% endif %};">{{ score }}%</div>
                         <div class="stat-row"><span class="stat-label">SSH FAILURES</span><span>{{ tel.ssh_failure_count }}</span></div>
-                        <div class="stat-row"><span class="stat-label">ACTIVE ALERTS</span><span>{{ alerts|length }}</span></div>
+                    </div>
+                    <div class="box">
+                        <div class="box-label">HYDROLOGY</div>
+                        {% for r in rivers %}
+                        <div class="stat-row"><span class="stat-label">{{ r.name[:20] }}</span><span>{{ r.val }} {{ r.unit }} <span style="color:#ffff00; font-size: 8px;">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span></span></div>
+                        {% endfor %}
                     </div>
                     <div class="box" style="border-color: #ff3131;">
-                        <div class="box-label" style="color:#ff3131; border-color:#ff3131;">THREAT LOG</div>
-                        {% for a in alerts[:8] %}
-                        <div style="border-bottom: 1px solid #ff313133; padding: 4px 0; color: #ff3131; font-size: 9px;">
-                            [{{ a.severity }}] {{ a.message }}
-                        </div>
-                        {% endfor %}
+                        <div class="box-label" style="color:#ff3131; border-color:#ff3131;">CRITICAL THREATS</div>
+                        {% for a in alerts[:6] %}<div style="color:#ff3131; margin-bottom:5px; border-bottom:1px solid #ff313122; padding-bottom:3px;">! {{ a.message }}</div>{% endfor %}
                     </div>
                 </div>
 
-                <!-- CENTER: STRATEGIC DATA WALL -->
+                <!-- CENTER: THE CORE VIEWPORT -->
                 <div class="col">
-                    <div class="box" style="min-height: 600px;">
-                        <div class="box-label">STRATEGIC DATA WALL // EXTRACTED INTELLIGENCE</div>
-                        {% for cat, items in stats.items() %}
-                        <div class="cat-head">// {{ cat }}</div>
+                    <div class="box">
+                        <div class="box-label">STRATEGIC DATA WALL // RECENT RESEARCH EXTRACTS</div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            {% for cat, items in stats.items() %}
+                            <div style="grid-column: span 2; color: #000; background: #00ff41; padding: 2px 8px; font-weight: bold; font-size: 9px; margin-top: 5px;">{{ cat }}</div>
                             {% for s in items %}
-                            <div style="border: 1px solid #004111; padding: 8px; background: #0a0f18;">
-                                <div style="font-size: 8px; color: #008f11; margin-bottom: 3px;">{{ s.label }}</div>
+                            <div class="data-card">
+                                <div style="font-size: 8px; color: #008f11;">{{ s.label }}</div>
                                 <div style="font-size: 1.1rem; font-weight: bold;">
                                     {{ s.val }} {{ s.unit }}
                                     {% if s.delta != 0 %}
-                                    <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 9px;">
-                                        ({% if s.delta > 0 %}+{% endif %}{{ "%.2f"|format(s.delta) }})
-                                    </span>
+                                    <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 9px;">({% if s.delta > 0 %}+{% endif %}{{ "%.2f"|format(s.delta) }})</span>
                                     {% endif %}
                                 </div>
                             </div>
                             {% endfor %}
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="box">
+                        <div class="box-label">TACTICAL INTELLIGENCE DISPATCHES // NARRATIVE SUMMARY</div>
+                        {% for v in vignettes %}
+                        <div class="vignette">
+                            <div class="vignette-title">>> {{ v.title }}</div>
+                            <div class="vignette-body">{{ v.body }}</div>
                         </div>
                         {% endfor %}
                     </div>
@@ -880,34 +911,19 @@ def report(
                 <div class="col">
                     <div class="box">
                         <div class="box-label">AIRSPACE DENSITY</div>
-                        <div class="big-val">{{ tel.aircraft_count }}</div>
+                        <div class="big-metric">{{ tel.aircraft_count }}</div>
                         <div style="text-align: center; color: #008f11;">ACTIVE ADS-B PINGS</div>
                     </div>
                     <div class="box">
-                        <div class="box-label">SIGINT SPECTRUM</div>
+                        <div class="box-label">SIGINT SPECTRUM PEAKS</div>
                         {% for f in rf[:15] %}
-                        <div class="stat-row">
-                            <span class="stat-label">{{ f.freq }} MHz</span>
-                            <span>{{ f.db }} dB <span style="color:#ffff00; font-size: 8px;">({% if f.delta > 0 %}+{% endif %}{{ "%.2f"|format(f.delta) }})</span></span>
-                        </div>
+                        <div class="stat-row"><span class="stat-label">{{ f.freq }} MHz</span><span>{{ f.db }} dB <span style="color:#ffff00; font-size: 8px;">({% if f.delta > 0 %}+{% endif %}{{ "%.2f"|format(f.delta) }})</span></span></div>
                         {% endfor %}
                     </div>
                     <div class="box">
-                        <div class="box-label">HYDROLOGY</div>
-                        {% for r in rivers %}
-                        <div class="stat-row">
-                            <span class="stat-label">{{ r.name[:20] }}</span>
-                            <span>{{ r.val }} {{ r.unit }} <span style="color:#ffff00; font-size: 8px;">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span></span>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    <div class="box">
-                        <div class="box-label">SOFTWARE ARSENAL</div>
+                        <div class="box-label">SYSTEM SOFTWARE ARSENAL</div>
                         {% for s in sw %}
-                        <div class="stat-row">
-                            <span class="stat-label">{{ s.manager }}</span>
-                            <span>{{ s.count }} PKGS <span style="color:#ffff00; font-size: 8px;">({% if s.delta > 0 %}+{% endif %}{{ s.delta }})</span></span>
-                        </div>
+                        <div class="stat-row"><span class="stat-label">{{ s.manager.upper() }}</span><span>{{ s.package_count }} PKGS</span></div>
                         {% endfor %}
                     </div>
                 </div>
@@ -924,16 +940,19 @@ def report(
             rivers=latest_rivers,
             rf=processed_rf,
             stats=categorized_stats,
-            sw=latest_sw,
+            vignettes=vignettes,
             alerts=alerts,
+            sw=sw_all[:4],
             now=now_str,
-            version="0.34.0",
+            version="0.35.0",
         )
 
         fname = "tactical_intelligence_briefing.html"
         with open(fname, "w") as f:
             f.write(html)
-        console.print(f"[bold green]Pure Stats Briefing forged: {fname}[/bold green]")
+        console.print(
+            f"[bold green]Unified Command Briefing forged: {fname}[/bold green]"
+        )
         if open_browser:
             import subprocess
 
