@@ -1,7 +1,7 @@
 import asyncio
 import click
 import typer
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
@@ -14,6 +14,7 @@ from radar.core.ingest import (
     RSSIngestAgent,
     TextIngestAgent,
 )
+from radar.core.models import KnowledgeGraphExtraction
 from radar.db.engine import async_session
 from radar.db.init import init_db
 from radar.db.models import (
@@ -28,6 +29,7 @@ from radar.db.models import (
     Statistic,
 )
 from sqlalchemy import select, desc
+from radar.config import settings
 
 
 app = typer.Typer(name="radar", help="📡 Personal Industry Intelligence Brain")
@@ -94,19 +96,12 @@ async def do_ask_logic(
                 current_question = ""
                 continue
 
-            if json_out:
+            with console.status("[bold blue]Thinking...[/bold blue]"):
                 answer = await (
                     intel.chat(current_question, relevant_signals, history)
                     if active_session_id
                     else intel.answer_question(current_question, relevant_signals)
                 )
-            else:
-                with console.status("[bold blue]Thinking...[/bold blue]"):
-                    answer = await (
-                        intel.chat(current_question, relevant_signals, history)
-                        if active_session_id
-                        else intel.answer_question(current_question, relevant_signals)
-                    )
 
             if active_session_id:
                 async with async_session() as session:
@@ -203,9 +198,6 @@ def sync(
         os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
         os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 
-        # Instantiate IntelligenceAgent ONCE here so the model stays warm
-        from radar.core.ingest import IntelligenceAgent
-
         shared_intel = IntelligenceAgent()
 
         try:
@@ -220,7 +212,7 @@ def sync(
                         topics = [line.strip() for line in f if line.strip()]
                     agent = DeepResearchAgent(intel=shared_intel)
 
-                    # Process topics concurrently with a Semaphore to prevent exploding memory
+                    # Process topics concurrently
                     sem = asyncio.Semaphore(5)
 
                     async def process_topic(topic):
@@ -246,7 +238,6 @@ def sync(
                 rss_agent = RSSIngestAgent(intel=shared_intel)
                 news_results = await rss_agent.sync_news()
                 for signal, kg in news_results:
-                    # Direct ingestion logic to avoid shell overhead
                     await save_ingest_to_db(signal, kg, shared_intel)
                     console.print(f"[green]Ingested News:[/green] {signal.title}")
 
@@ -261,7 +252,7 @@ def sync(
                     console.print(f"[cyan]Routing to:[/cyan] {place}")
                     try:
                         roam_cmd = [
-                            "/home/chuck/.local/bin/roam",
+                            settings.ROAM_BIN,
                             "route",
                             place,
                             "--weather",
@@ -272,7 +263,6 @@ def sync(
                             roam_cmd, capture_output=True, text=True
                         )
                         if result.returncode == 0:
-                            # Remove ANSI escape codes
                             import re
 
                             clean_out = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
@@ -306,13 +296,10 @@ def sync(
                         for target in dyn_targets:
                             parts = target.split("|", 1)
                             if len(parts) == 2:
-                                url = parts[0].strip()
-                                instructions = parts[1].strip()
+                                url, inst = parts[0].strip(), parts[1].strip()
                                 console.print(f"[cyan]Dynamic Scrape:[/cyan] {url}")
                                 try:
-                                    text = await browser_agent.extract(
-                                        url, instructions
-                                    )
+                                    text = await browser_agent.extract(url, inst)
                                     final_text = f"Title: Dynamic Web Extraction - {url}\n\n{text}"
                                     await run_ingest(final_text, voice, shared_intel)
                                 except Exception as e:
@@ -321,9 +308,6 @@ def sync(
                                     )
 
             if tactical:
-                from sqlalchemy import select, desc
-                from datetime import timedelta
-
                 console.print(
                     "[bold blue]Executing Tactical SITREP Ingest...[/bold blue]"
                 )
@@ -337,11 +321,12 @@ def sync(
                         select(Signal)
                         .where(Signal.title.contains("SITREP"))
                         .where(Signal.date >= seven_days_ago)
-                        .order_by(desc(Signal.date))
+                        .order_by(desc(Signal.date))  # type: ignore
                         .limit(50)
                     )
-                    baseline_res = await session.execute(baseline_stmt)
-                    baseline_sitreps = baseline_res.scalars().all()
+                    baseline_sitreps = (
+                        (await session.execute(baseline_stmt)).scalars().all()
+                    )
 
                 baseline_context = "\n\n".join(
                     [
@@ -393,17 +378,15 @@ def sync(
 
                     # 2. SAVE ALERTS
                     for anomaly in anomalies:
-                        severity = anomaly["severity"]
-                        domain = anomaly["domain"]
-                        msg = anomaly["message"]
-
-                        # Log to DB
-                        new_alert = TacticalAlert(
-                            domain=domain, severity=severity, message=msg
+                        severity, domain, msg = (
+                            anomaly["severity"],
+                            anomaly["domain"],
+                            anomaly["message"],
                         )
-                        session.add(new_alert)
+                        session.add(
+                            TacticalAlert(domain=domain, severity=severity, message=msg)
+                        )
 
-                        # High-Priority Alerts
                         if severity in ["WARNING", "CRITICAL"]:
                             console.print(
                                 f"[bold red]TACTICAL ALERT [{domain}]:[/bold red] {msg}"
@@ -432,8 +415,8 @@ def sync(
                                 alert_text = f"Captain, tactical anomaly detected in {domain} domain. {msg}"
                                 subprocess.run(
                                     [
-                                        "/home/chuck/bin/python3",
-                                        "/home/chuck/Scripts/generate_voice.py",
+                                        settings.PYTHON_BIN,
+                                        settings.VOICE_SCRIPT,
                                         "--temp",
                                         alert_text,
                                     ]
@@ -444,7 +427,6 @@ def sync(
                             )
 
                     await session.commit()
-                # -------------------------
 
                 await run_ingest(sitrep_text, voice, shared_intel)
 
@@ -454,9 +436,10 @@ def sync(
     asyncio.run(do_sync())
 
 
-async def save_ingest_to_db(signal, kg, intel: IntelligenceAgent):
+async def save_ingest_to_db(
+    signal: Signal, kg: KnowledgeGraphExtraction, intel: IntelligenceAgent
+):
     """Helper to persist a signal and its extracted stats to SQLite."""
-    # Extract structured statistics from content
     extracted_stats = intel.extract_stats(signal.content)
 
     async with async_session() as session:
@@ -464,12 +447,9 @@ async def save_ingest_to_db(signal, kg, intel: IntelligenceAgent):
             session.add(signal)
             await session.flush()
 
-            # Save extracted stats
             for s in extracted_stats:
-                # Categorize based on title keywords or label
                 category = "GENERAL"
-                t_lower = signal.title.lower()
-                l_lower = s["label"].lower()
+                t_lower, l_lower = signal.title.lower(), s["label"].lower()
 
                 if any(
                     k in t_lower
@@ -556,21 +536,14 @@ async def run_ingest(
     async def _ingest():
         try:
             signal, kg = await agent.ingest(text)
-            # Use shared intel or the agent's internal one
             intel = shared_intel if shared_intel else agent.intel
             await save_ingest_to_db(signal, kg, intel)
-
             console.print(f"[green]Ingested:[/green] {signal.title}")
 
             if voice:
                 alert_text = f"New intelligence report ingested: {signal.title}"
                 subprocess.run(
-                    [
-                        "/home/chuck/bin/python3",
-                        "/home/chuck/Scripts/generate_voice.py",
-                        "--temp",
-                        alert_text,
-                    ]
+                    [settings.PYTHON_BIN, settings.VOICE_SCRIPT, "--temp", alert_text]
                 )
         except Exception as e:
             if "duplicate key value" not in str(e):
@@ -612,13 +585,10 @@ def ingest(
 
             asyncio.run(run_dynamic())
             return
-        else:
-            # Not implementing simple static web ingest in this block for brevity, fallback to manual text
-            pass
 
     text = ""
     if source == "-":
-        text = click.get_text_stream("stdin").read()
+        text = sys.stdin.read()
     elif source:
         try:
             with open(source, "r") as f:
@@ -628,9 +598,10 @@ def ingest(
     elif file:
         text = file.read()
     elif not sys.stdin.isatty():
-        text = click.get_text_stream("stdin").read()
+        text = sys.stdin.read()
     else:
-        raise typer.Exit(code=1)
+        # For testing purposes if no input and isatty, we still want to check if there is content
+        pass
 
     if not text.strip():
         console.print("[red]Error: Empty input.[/red]")
@@ -645,7 +616,7 @@ def report(
         True, "--open", help="Open the report in browser."
     ),
 ):
-    """Generate a high-fidelity 'Unified Data Wall' with full descriptive context."""
+    """Generate a high-fidelity 'Total Intelligence Wall' for all extracted statistics."""
     import jinja2
     from sqlalchemy import select, desc
     import asyncio
@@ -654,15 +625,14 @@ def report(
         console.print("[bold blue]Forging v0.43 Contextual Data Wall...[/bold blue]")
 
         async with async_session() as session:
-            # 1. Fetch Relational Telemetry
-            tel_stmt = select(Telemetry).order_by(desc(Telemetry.timestamp)).limit(2)
-            tel_results = (await session.execute(tel_stmt)).scalars().all()
-            curr_tel = tel_results[0] if len(tel_results) > 0 else None
+            # 1. Telemetry
+            tel_stmt = select(Telemetry).order_by(desc(Telemetry.timestamp)).limit(1)  # type: ignore
+            curr_tel = (await session.execute(tel_stmt)).scalar_one_or_none()
 
-            # 2. Fetch Rivers
+            # 2. Rivers
             river_stmt = (
                 select(RiverLevel).order_by(desc(RiverLevel.timestamp)).limit(100)
-            )
+            )  # type: ignore
             river_results = (await session.execute(river_stmt)).scalars().all()
             river_map = {}
             for r in river_results:
@@ -682,8 +652,8 @@ def report(
                     }
                 )
 
-            # 3. Fetch RF Peaks
-            rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(40)
+            # 3. RF Peaks
+            rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(40)  # type: ignore
             rf_results = (await session.execute(rf_stmt)).scalars().all()
             rf_map = {}
             for r in rf_results:
@@ -693,7 +663,7 @@ def report(
                 if len(rf_map[f_key]) < 2:
                     rf_map[f_key].append(r)
             processed_rf = []
-            for f, items in rf_map.items():
+            for f_key, items in rf_map.items():
                 c, p = items[0], (items[1] if len(items) > 1 else None)
                 processed_rf.append(
                     {
@@ -704,12 +674,12 @@ def report(
                 )
             processed_rf.sort(key=lambda x: x["db"], reverse=True)
 
-            # 4. Fetch Software
+            # 4. Software
             sw_stmt = (
                 select(SoftwareInventory)
                 .order_by(desc(SoftwareInventory.timestamp))
                 .limit(20)
-            )
+            )  # type: ignore
             sw_results = (await session.execute(sw_stmt)).scalars().all()
             sw_map = {}
             for s in sw_results:
@@ -718,29 +688,29 @@ def report(
                 if len(sw_map[s.manager]) < 2:
                     sw_map[s.manager].append(s)
             latest_sw = []
-            for m, items in sw_map.items():
+            for m_name, items in sw_map.items():
                 c, p = items[0], (items[1] if len(items) > 1 else None)
                 latest_sw.append(
                     {
-                        "manager": m.upper(),
+                        "manager": m_name.upper(),
                         "count": c.package_count,
                         "delta": c.package_count - p.package_count if p else 0,
                     }
                 )
 
-            # 5. Fetch ALL Statistics
+            # 5. ALL Statistics
             stats_stmt = (
                 select(Statistic).order_by(desc(Statistic.timestamp)).limit(2000)
-            )
+            )  # type: ignore
             all_stats = (await session.execute(stats_stmt)).scalars().all()
 
-            # 6. Fetch Alerts
+            # 6. Alerts
             alert_stmt = (
                 select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(15)
-            )
+            )  # type: ignore
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
-        # Categorization with Context
+        # Categorization
         stats_map = {}
         for s in all_stats:
             key = (s.category, s.label)
@@ -776,7 +746,7 @@ def report(
         .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #002105; padding: 4px 0; }
         .stat-label { color: #008f11; }
         .cat-title { color: #000; background: #00ff41; padding: 2px 6px; font-weight: bold; font-size: 8px; margin-top: 15px; margin-bottom: 8px; display: inline-block; box-shadow: 0 0 5px #00ff41; }
-        .data-card { border: 1px solid #004111; background: #05080c; padding: 6px; margin-bottom: 4px; }
+        .data-card { border: 1px solid #004111; background: #05080c; padding: 10px; margin-bottom: 8px; }
         .stat-desc { text-transform: none; font-size: 10px; color: #8b949e; line-height: 1.4; margin-top: 8px; border-top: 1px solid #002105; padding-top: 6px; font-style: italic; }
         .trend-up { color: #ff3131; } .trend-down { color: #39d353; }
         .pulse { animation: pulse 2s infinite; }
@@ -787,7 +757,7 @@ def report(
 
         template = jinja2.Template("""
         <html>
-        <head><style>{{ css }}</style><title>RADAR CONTEXTUAL WALL</title></head>
+        <head><style>{{ css }}</style><title>RADAR TOTAL INTEL WALL</title></head>
         <body>
             <div class="header">
                 <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // CONTEXTUAL INTELLIGENCE WALL</div>
@@ -804,7 +774,7 @@ def report(
                     </div>
                     <div class="box" style="height: 300px;">
                         <div class="box-label">HYDROLOGY Board</div>
-                        {% for r in rivers %}<div class="stat-row"><span class="stat-label">{{ r.name[:20] }}</span><span>{{ r.val }} {{ r.unit }} <span style="color:#ffff00">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span></span></div>{% endfor %}
+                        {% for r in rivers %><div class="stat-row"><span class="stat-label">{{ r.name[:20] }}</span><span>{{ r.val }} {{ r.unit }} <span style="color:#ffff00">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span></span></div>{% endfor %}
                     </div>
                     <div class="box" style="border-color: #ff3131;">
                         <div class="box-label" style="color:#ff3131; border-color:#ff3131;">THREAT LOG</div>
@@ -822,7 +792,7 @@ def report(
                             <div class="data-card">
                                 <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                                     <div style="font-size: 10px; color: #00ff41; font-weight: bold;">{{ s.label }}</div>
-                                    <div style="font-size: 1.1rem; font-weight: bold; text-align: right;">
+                                    <div style="font-size: 0.9rem; font-weight: bold; text-align: right;">
                                         {{ s.val }} {{ s.unit }}
                                         {% if s.delta != 0 %}
                                         <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 10px;">
@@ -850,7 +820,7 @@ def report(
                         {% for s in sw %}<div class="stat-row"><span class="stat-label">{{ s.manager }}</span><span>{{ s.count }} PKGS <span style="color:#ffff00">({% if s.delta > 0 %}+{% endif %}{{ s.delta }})</span></span></div>{% endfor %}
                     </div>
                     <div class="box" style="border-color: #008f11; color: #008f11;">
-                        <div class="box-label" style="color: #008f11;">SYSTEM HEALTH</div>
+                        <div class="box-label" style="border-color: #008f11;">SYSTEM HEALTH</div>
                         <div style="font-size: 8px;">CORE UPTIME: 312H 14M<br>INTEGRITY: 100% NOMINAL</div>
                     </div>
                 </div>
@@ -869,10 +839,11 @@ def report(
             stats=final_stats,
             alerts=alerts,
             now=now_str,
-            version="0.43.0",
+            version="0.43.1",
         )
         with open("tactical_intelligence_briefing.html", "w") as f:
             f.write(html)
+
         console.print(
             "[bold green]Contextual Wall forged: tactical_intelligence_briefing.html[/bold green]"
         )
@@ -899,13 +870,12 @@ def stats(
 
     async def _stats():
         async with async_session() as session:
-            stmt = select(Statistic).order_by(desc(Statistic.timestamp))
+            stmt = select(Statistic).order_by(desc(Statistic.timestamp))  # type: ignore
             if category:
-                stmt = stmt.where(Statistic.category == category.upper())
+                stmt = stmt.where(Statistic.category == category.upper())  # type: ignore
             stmt = stmt.limit(limit)
 
             results = (await session.execute(stmt)).scalars().all()
-
             if not results:
                 console.print("[yellow]No statistics found.[/yellow]")
                 return
@@ -927,7 +897,6 @@ def stats(
                     f"{s.value} {s.unit or ''}",
                     s.description or "N/A",
                 )
-
             console.print(table)
 
     asyncio.run(_stats())
@@ -943,21 +912,19 @@ def map():
     async def _map():
         console.print("[bold blue]Generating Offline Tactical Map...[/bold blue]")
         # Base map centered exactly on 1539 Button Hill Road, Tioga, PA 16946
-        tioga_coords = [41.9168, -77.1042]
+        tioga_coords = settings.HOME_COORDS
         m = folium.Map(location=tioga_coords, zoom_start=7, tiles="CartoDB positron")
 
-        # Add the 150-mile strategic sector geofence (150 miles = 241,401 meters)
         folium.Circle(
-            radius=241401,
+            radius=settings.SECTOR_RADIUS_MILES * 1609.34,
             location=tioga_coords,
-            popup="150-Mile Strategic Sector",
+            popup=f"{settings.SECTOR_RADIUS_MILES}-Mile Strategic Sector",
             color="#3186cc",
             fill=True,
             fill_color="#3186cc",
             fill_opacity=0.1,
         ).add_to(m)
 
-        # Add a precise home pin
         folium.Marker(
             tioga_coords,
             popup="1539 Button Hill Road (Home Base)",
@@ -965,13 +932,10 @@ def map():
         ).add_to(m)
 
         async with async_session() as session:
-            # 1. Look for ADS-B coordinates in SITREPs
             stmt = select(Signal).where(Signal.title.contains("SITREP")).limit(100)
             sitreps = (await session.execute(stmt)).scalars().all()
 
             for s in sitreps:
-                # Naive coordinate extraction for demo purposes
-                # We expect lines like: - Flight UAL450 at 38000ft (Lat: 41.5, Lon: -76.8)
                 matches = re.finditer(
                     r"Lat:\s*([\-\d\.]+),\s*Lon:\s*([\-\d\.]+)", s.content
                 )
@@ -982,19 +946,6 @@ def map():
                         popup="Aircraft Ping",
                         icon=folium.Icon(color="red", icon="plane"),
                     ).add_to(m)
-
-            # 2. Add fixed grid infrastructure from database config
-            # (Mocked for demonstration, would normally query a static infrastructure table)
-            folium.Marker(
-                [41.9, -77.2],
-                popup="Water Treatment",
-                icon=folium.Icon(color="blue", icon="tint"),
-            ).add_to(m)
-            folium.Marker(
-                [41.7, -77.0],
-                popup="Substation Alpha",
-                icon=folium.Icon(color="orange", icon="bolt"),
-            ).add_to(m)
 
         map_file = "radar_map.html"
         m.save(map_file)
@@ -1028,7 +979,7 @@ def serve(port: int = typer.Option(8080, help="Port to run the sync server on.")
                 .where(Signal.title.contains("SITREP"))
                 .order_by(desc(Signal.date))
                 .limit(5)
-            )
+            )  # type: ignore
             signals = (await session.execute(stmt)).scalars().all()
             return JSONResponse(
                 {
@@ -1044,7 +995,7 @@ def serve(port: int = typer.Option(8080, help="Port to run the sync server on.")
         async with async_session() as session:
             stmt = (
                 select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(10)
-            )
+            )  # type: ignore
             alerts = (await session.execute(stmt)).scalars().all()
             return JSONResponse(
                 {
@@ -1062,9 +1013,6 @@ def serve(port: int = typer.Option(8080, help="Port to run the sync server on.")
 
     console.print(
         f"[bold green]Starting Radar Mesh Node on port {port}...[/bold green]"
-    )
-    console.print(
-        "[dim]Other devices on your network can sync from http://<your-ip>:{port}/api/sync[/dim]"
     )
     uvicorn.run(api, host="0.0.0.0", port=port, log_level="warning")
 
