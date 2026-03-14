@@ -527,9 +527,11 @@ async def save_ingest_to_db(signal, kg, intel: IntelligenceAgent):
                         label=s["label"],
                         value=s["value"],
                         unit=s["unit"],
+                        description=s.get("description"),
                         source_signal_id=signal.id,
                     )
                 )
+
             await session.commit()
         except Exception as e:
             await session.rollback()
@@ -757,16 +759,18 @@ def report(
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=JetBrains+Mono:wght@400;700&display=swap');
         body { background-color: #020406; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; }
-        .wall-grid { display: grid; grid-template-columns: 320px 1fr 320px; gap: 10px; }
-        .header { grid-column: 1 / span 3; border: 1px solid #00ff41; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; background: #00ff4111; margin-bottom: 10px; }
+        .wall-grid { display: grid; grid-template-columns: 320px 1fr 320px; gap: 10px; height: calc(100vh - 80px); }
+        .header { border: 1px solid #00ff41; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; background: #00ff4111; margin-bottom: 10px; }
         .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.3rem; font-weight: 900; text-shadow: 0 0 10px #00ff41; }
-        .box { border: 1px solid #00ff41; background: #080c12; padding: 12px; position: relative; margin-bottom: 10px; box-shadow: inset 0 0 8px #00ff4111; overflow-y: auto; }
-        .box-label { position: absolute; top: -8px; left: 12px; background: #020406; border: 1px solid #00ff41; padding: 0 6px; color: #00ff41; font-weight: bold; font-size: 8px; }
-        .metric-big { font-size: 2.2rem; font-weight: 900; text-align: center; margin: 5px 0; }
-        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #002105; padding: 4px 0; }
-        .stat-label { color: #008f11; }
-        .cat-title { color: #000; background: #00ff41; padding: 2px 6px; font-weight: bold; font-size: 8px; margin-top: 10px; margin-bottom: 8px; display: inline-block; box-shadow: 0 0 5px #00ff41; }
-        .data-card { border: 1px solid #004111; background: #05080c; padding: 6px; margin-bottom: 4px; }
+        .box { border: 1px solid #00ff41; background: #080c12; padding: 12px; position: relative; box-shadow: inset 0 0 8px #00ff4111; overflow-y: auto; display: flex; flex-direction: column; }
+        .box-label { position: absolute; top: -8px; left: 12px; background: #020406; border: 1px solid #00ff41; padding: 0 6px; color: #00ff41; font-weight: bold; font-size: 8px; z-index: 10; }
+        .metric-big { font-size: 2.2rem; font-weight: 900; text-align: center; margin: 10px 0; }
+        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #002105; padding: 4px 0; min-height: 20px; align-items: center; }
+        .stat-label { color: #008f11; flex: 1; }
+        .stat-val { font-weight: bold; margin-left: 10px; }
+        .cat-title { color: #000; background: #00ff41; padding: 2px 6px; font-weight: bold; font-size: 8px; margin-top: 15px; margin-bottom: 8px; display: inline-block; box-shadow: 0 0 5px #00ff41; width: fit-content; }
+        .data-card { border: 1px solid #004111; background: #05080c; padding: 8px; margin-bottom: 6px; }
+        .stat-desc { text-transform: none; font-size: 8px; color: #666; line-height: 1.2; margin-top: 4px; border-top: 1px solid #002105; padding-top: 4px; }
         .trend-up { color: #ff3131; } .trend-down { color: #39d353; }
         .pulse { animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
@@ -803,23 +807,37 @@ def report(
                     </div>
                 </div>
 
+                
                 <!-- CENTER: THE TOTAL DATA WALL -->
-                <div class="col">
-                    <div class="box" style="height: 750px;">
+                <div class="col" style="display: flex; flex-direction: column;">
+                    <div class="box" style="flex: 1;">
                         <div class="box-label">STRATEGIC DATA WALL // ALL EXTRACTED NUMERICAL INTELLIGENCE</div>
                         {% for cat, items in stats.items() %}
                         <div class="cat-title">// CATEGORY: {{ cat }}</div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                             {% for s in items %}
                             <div class="data-card">
-                                <div style="font-size: 7px; color: #008f11; margin-bottom: 2px;">{{ s.label }}</div>
-                                <div style="font-size: 1rem; font-weight: bold;">
-                                    {{ s.val }} {{ s.unit }}
-                                    {% if s.delta != 0 %}
-                                    <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 8px;">({% if s.delta > 0 %}+{% endif %}{{ "%.2f"|format(s.delta) }})</span>
-                                    {% endif %}
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                                    <div style="font-size: 8px; color: #00ff41; font-weight: bold;">{{ s.label }}</div>
+                                    <div style="font-size: 0.9rem; font-weight: bold; text-align: right;">
+                                        {{ s.val }} {{ s.unit }}
+                                        {% if s.delta != 0 %}
+                                        <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 8px;">
+                                            ({% if s.delta > 0 %}+{% endif %}{{ "%.2f"|format(s.delta) }})
+                                        </span>
+                                        {% endif %}
+                                    </div>
                                 </div>
+                                {% if s.description %}
+                                <div class="stat-desc">{{ s.description[:120] }}...</div>
+                                {% endif %}
                             </div>
+                            {% endfor %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
                             {% endfor %}
                         </div>
                         {% endfor %}
@@ -857,7 +875,7 @@ def report(
             stats=final_stats,
             alerts=alerts,
             now=now_str,
-            version="0.38.0",
+            version="0.39.0",
         )
 
         fname = "tactical_intelligence_briefing.html"

@@ -30,10 +30,19 @@ class IntelligenceAgent:
         return [0.0] * 384
 
     def extract_stats(self, text: str) -> List[dict]:
-        """High-fidelity tactical OSINT/SIGINT numerical extraction engine."""
+        """High-fidelity tactical OSINT/SIGINT numerical extraction engine with context preservation."""
         import re
 
         stats = []
+
+        def get_context(match_str, full_text, window=60):
+            """Helper to grab surrounding text for description."""
+            idx = full_text.find(match_str)
+            if idx == -1:
+                return ""
+            start = max(0, idx - window)
+            end = min(len(full_text), idx + len(match_str) + window)
+            return full_text[start:end].replace("\n", " ").strip()
 
         # 1. SPECIALIZED SIGINT (Frequencies, Bandwidths, Power)
         # Power levels in dBm (e.g., -95.4 dBm)
@@ -41,7 +50,12 @@ class IntelligenceAgent:
         for val in dbm_matches:
             try:
                 stats.append(
-                    {"label": "Noise Floor/RSSI", "value": float(val), "unit": "dBm"}
+                    {
+                        "label": "Noise Floor/RSSI",
+                        "value": float(val),
+                        "unit": "dBm",
+                        "description": get_context(f"{val} dBm", text),
+                    }
                 )
             except ValueError:
                 continue
@@ -54,7 +68,14 @@ class IntelligenceAgent:
         )
         for val, unit in bw_matches:
             try:
-                stats.append({"label": "Signal BW", "value": float(val), "unit": unit})
+                stats.append(
+                    {
+                        "label": "Signal BW",
+                        "value": float(val),
+                        "unit": unit,
+                        "description": get_context(f"{val} {unit}", text),
+                    }
+                )
             except ValueError:
                 continue
 
@@ -65,7 +86,12 @@ class IntelligenceAgent:
         for val in enc_matches:
             try:
                 stats.append(
-                    {"label": "Encryption Depth", "value": float(val), "unit": "bit"}
+                    {
+                        "label": "Encryption Depth",
+                        "value": float(val),
+                        "unit": "bit",
+                        "description": get_context(f"{val}-bit", text),
+                    }
                 )
             except ValueError:
                 continue
@@ -104,14 +130,16 @@ class IntelligenceAgent:
             ),
         ]
         for pattern, label, unit in tactical_patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            for val in matches:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for m in matches:
+                val = m.group(1)
                 try:
                     stats.append(
                         {
                             "label": label,
                             "value": float(val.replace(",", "")),
                             "unit": unit,
+                            "description": get_context(m.group(0), text),
                         }
                     )
                 except ValueError:
@@ -122,8 +150,9 @@ class IntelligenceAgent:
             (r"\$(\d+\.?\d*)\s*([MBK]|Million|Billion)", "Strategic Value"),
         ]
         for pattern, label in financial_patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            for val, scale in matches:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for m in matches:
+                val, scale = m.group(1), m.group(2)
                 try:
                     f_val = float(val)
                     s = scale.upper()
@@ -133,43 +162,64 @@ class IntelligenceAgent:
                         f_val *= 1_000_000
                     elif s.startswith("K"):
                         f_val *= 1_000
-                    stats.append({"label": label, "value": f_val, "unit": "USD"})
+                    stats.append(
+                        {
+                            "label": label,
+                            "value": f_val,
+                            "unit": "USD",
+                            "description": get_context(m.group(0), text),
+                        }
+                    )
                 except ValueError:
                     continue
 
         # 4. Standard Heuristics (Gas, Percentages, Units)
-        gas_prices = re.findall(
+        gas_prices = re.finditer(
             r"(?:Gas|Fuel|Gasoline):\s*\$([0-9,]+\.?\d*)", text, re.IGNORECASE
         )
-        for val in gas_prices:
+        for m in gas_prices:
+            val = m.group(1)
             try:
                 stats.append(
                     {
                         "label": "Gas Price",
                         "value": float(val.replace(",", "")),
                         "unit": "USD",
+                        "description": get_context(m.group(0), text),
                     }
                 )
             except ValueError:
                 continue
 
-        currency = re.findall(r"\$([0-9,]+\.?\d*)", text)
-        for val in currency:
+        currency = re.finditer(r"\$([0-9,]+\.?\d*)", text)
+        for m in currency:
+            val = m.group(1)
             try:
                 f_val = float(val.replace(",", ""))
-                if not any(
-                    s["value"] == f_val and s["label"] == "Gas Price" for s in stats
-                ):
+                if not any(s["value"] == f_val and s["unit"] == "USD" for s in stats):
                     stats.append(
-                        {"label": "Price/Value", "value": f_val, "unit": "USD"}
+                        {
+                            "label": "Price/Value",
+                            "value": f_val,
+                            "unit": "USD",
+                            "description": get_context(m.group(0), text),
+                        }
                     )
             except ValueError:
                 continue
 
-        pcts = re.findall(r"(\d+\.?\d*)%", text)
-        for val in pcts:
+        pcts = re.finditer(r"(\d+\.?\d*)%", text)
+        for m in pcts:
+            val = m.group(1)
             try:
-                stats.append({"label": "Percentage", "value": float(val), "unit": "%"})
+                stats.append(
+                    {
+                        "label": "Percentage",
+                        "value": float(val),
+                        "unit": "%",
+                        "description": get_context(m.group(0), text),
+                    }
+                )
             except ValueError:
                 continue
 
@@ -180,14 +230,16 @@ class IntelligenceAgent:
             (r"(\d+,?\d*)\s*(?:beds|bed count)", "Medical Capacity", "Beds"),
         ]
         for pattern, label, unit in patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            for val in matches:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for m in matches:
+                val = m.group(1)
                 try:
                     stats.append(
                         {
                             "label": label,
                             "value": float(val.replace(",", "")),
                             "unit": unit,
+                            "description": get_context(m.group(0), text),
                         }
                     )
                 except ValueError:
