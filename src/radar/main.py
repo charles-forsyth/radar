@@ -613,7 +613,7 @@ def ingest(
 @app.command()
 def report(
     open_browser: bool = typer.Option(
-        True, "--open", help="Open the report in browser."
+        True, "--open/--no-open", help="Open the report in browser."
     ),
 ):
     """Generate the v0.45.2 Unified Intelligence HUD (Map + Data Wall)."""
@@ -938,7 +938,7 @@ def report(
             stats=final_stats,
             alerts=alerts,
             now=now_str,
-            version="0.45.2",
+            version="0.45.3",
             map_data=map_b64,
         )
 
