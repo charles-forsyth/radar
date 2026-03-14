@@ -702,7 +702,7 @@ def report(
 
     async def _report():
         console.print(
-            "[bold blue]Forging v0.46.0 Unified Intelligence HUD...[/bold blue]"
+            "[bold blue]Forging v0.47.0 Unified Intelligence HUD...[/bold blue]"
         )
         map_b64 = await _generate_map_base64()
 
