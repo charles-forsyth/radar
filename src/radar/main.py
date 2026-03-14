@@ -600,7 +600,6 @@ def ingest(
     elif not sys.stdin.isatty():
         text = sys.stdin.read()
     else:
-        # For testing purposes if no input and isatty, we still want to check if there is content
         pass
 
     if not text.strip():
@@ -622,7 +621,7 @@ def report(
     import asyncio
 
     async def _report():
-        console.print("[bold blue]Forging v0.43 Contextual Data Wall...[/bold blue]")
+        console.print("[bold blue]Forging v0.44 Contextual Data Wall...[/bold blue]")
 
         async with async_session() as session:
             # 1. Telemetry
@@ -774,7 +773,7 @@ def report(
                     </div>
                     <div class="box" style="height: 300px;">
                         <div class="box-label">HYDROLOGY Board</div>
-                        {% for r in rivers %><div class="stat-row"><span class="stat-label">{{ r.name[:20] }}</span><span>{{ r.val }} {{ r.unit }} <span style="color:#ffff00">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span></span></div>{% endfor %}
+                        {% for r in rivers %}<div class="stat-row"><span class="stat-label">{{ r.name[:20] }}</span><span>{{ r.val }} {{ r.unit }} <span style="color:#ffff00">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span></span></div>{% endfor %}
                     </div>
                     <div class="box" style="border-color: #ff3131;">
                         <div class="box-label" style="color:#ff3131; border-color:#ff3131;">THREAT LOG</div>
@@ -839,7 +838,7 @@ def report(
             stats=final_stats,
             alerts=alerts,
             now=now_str,
-            version="0.43.1",
+            version="0.44.0",
         )
         with open("tactical_intelligence_briefing.html", "w") as f:
             f.write(html)
@@ -911,7 +910,6 @@ def map():
 
     async def _map():
         console.print("[bold blue]Generating Offline Tactical Map...[/bold blue]")
-        # Base map centered exactly on 1539 Button Hill Road, Tioga, PA 16946
         tioga_coords = settings.HOME_COORDS
         m = folium.Map(location=tioga_coords, zoom_start=7, tiles="CartoDB positron")
 
