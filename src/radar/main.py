@@ -702,7 +702,7 @@ def report(
 
     async def _report():
         console.print(
-            "[bold blue]Forging v0.47.0 Unified Intelligence HUD...[/bold blue]"
+            "[bold blue]Forging v0.47.1 Unified Intelligence HUD...[/bold blue]"
         )
         map_b64 = await _generate_map_base64()
 
@@ -979,15 +979,48 @@ def report(
             stats=final_stats,
             alerts=alerts,
             now=now_str,
-            version="0.47.0",
+            version="0.47.1",
             map_data=map_b64,
         )
 
         with open("tactical_intelligence_briefing.html", "w") as f:
             f.write(html)
 
+        # JSON DATA EXPORT
+        import json
+
+        def to_dict(obj):
+            if hasattr(obj, "__dict__"):
+                d = dict(obj.__dict__)
+                d.pop("_sa_instance_state", None)
+                # Convert UUID and Datetime
+                for k, v in d.items():
+                    if hasattr(v, "hex"):
+                        d[k] = str(v)
+                    elif hasattr(v, "isoformat"):
+                        d[k] = v.isoformat()
+                return d
+            return str(obj)
+
+        export_data = {
+            "timestamp": now_str,
+            "version": "0.47.1",
+            "telemetry": to_dict(curr_tel) if curr_tel else None,
+            "rivers": latest_rivers,
+            "rf_peaks": processed_rf,
+            "software": latest_sw,
+            "strategic_stats": final_stats,
+            "alerts": [to_dict(a) for a in alerts],
+        }
+
+        with open("tactical_intelligence_data.json", "w") as f:
+            json.dump(export_data, f, indent=2)
+
         console.print(
             "[bold green]Unified Intelligence HUD forged: tactical_intelligence_briefing.html[/bold green]"
+        )
+        console.print(
+            "[bold cyan]Intelligence Data Exported: tactical_intelligence_data.json[/bold cyan]"
         )
         if open_browser:
             import subprocess
