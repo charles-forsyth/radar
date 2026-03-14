@@ -353,6 +353,7 @@ def sync(
                         Telemetry(
                             temp_f=snapshot.temp_f,
                             aircraft_count=snapshot.aircraft_count,
+                            mapped_aircraft_count=snapshot.mapped_aircraft_count,
                             lan_device_count=snapshot.lan_device_count,
                             ssh_failure_count=snapshot.ssh_failure_count,
                             internet_latency_ms=snapshot.internet_latency_ms,
@@ -611,12 +612,13 @@ def ingest(
 
 @app.command()
 @app.command()
+@app.command()
 def report(
     open_browser: bool = typer.Option(
         True, "--open/--no-open", help="Open the report in browser."
     ),
 ):
-    """Generate the v0.45.2 Unified Intelligence HUD (Map + Data Wall)."""
+    """Generate the v0.46.0 Unified Intelligence HUD (Map + Data Wall)."""
     import jinja2
     from sqlalchemy import select, desc
     import asyncio
@@ -635,7 +637,7 @@ def report(
             color="#00ff41",
             fill=True,
             fill_color="#00ff41",
-            fill_opacity=0.05,
+            fill_opacity=0.03,
         ).add_to(m)
 
         folium.Marker(
@@ -645,9 +647,42 @@ def report(
         ).add_to(m)
 
         async with async_session() as session:
-            stmt = select(Signal).where(Signal.title.contains("SITREP")).limit(100)
-            sitreps = (await session.execute(stmt)).scalars().all()
-            for s in sitreps:
+            # 1. LIVE TARGETS (Latest SITREP)
+            stmt = (
+                select(Signal)
+                .where(Signal.title.contains("SITREP"))
+                .order_by(desc(Signal.date))
+                .limit(1)
+            )
+            latest = (await session.execute(stmt)).scalar_one_or_none()
+            if latest:
+                matches = re.finditer(
+                    r"Flight ([\w\s]+) at ([\d]+)ft \(Lat: ([\-\d\.]+), Lon: ([\-\d\.]+)\)",
+                    latest.content,
+                )
+                for match in matches:
+                    flight, alt, lat, lon = (
+                        match.group(1),
+                        match.group(2),
+                        float(match.group(3)),
+                        float(match.group(4)),
+                    )
+                    folium.Marker(
+                        [lat, lon],
+                        popup=f"LIVE: {flight} ({alt}ft)",
+                        icon=folium.Icon(color="red", icon="plane"),
+                    ).add_to(m)
+
+            # 2. HISTORICAL TRACES (Last 10 SITREPs)
+            stmt = (
+                select(Signal)
+                .where(Signal.title.contains("SITREP"))
+                .order_by(desc(Signal.date))
+                .offset(1)
+                .limit(10)
+            )
+            past = (await session.execute(stmt)).scalars().all()
+            for s in past:
                 matches = re.finditer(
                     r"Lat:\s*([\-\d\.]+),\s*Lon:\s*([\-\d\.]+)", s.content
                 )
@@ -655,10 +690,11 @@ def report(
                     lat, lon = float(match.group(1)), float(match.group(2))
                     folium.CircleMarker(
                         [lat, lon],
-                        radius=4,
-                        color="#ff3131",
+                        radius=2,
+                        color="#00ff41",
                         fill=True,
-                        popup="AIRCRAFT PING",
+                        opacity=0.4,
+                        popup="RECENT TRACE",
                     ).add_to(m)
 
         map_html = m._repr_html_()
@@ -666,17 +702,17 @@ def report(
 
     async def _report():
         console.print(
-            "[bold blue]Forging v0.45.2 Unified Intelligence HUD...[/bold blue]"
+            "[bold blue]Forging v0.46.0 Unified Intelligence HUD...[/bold blue]"
         )
         map_b64 = await _generate_map_base64()
 
         async with async_session() as session:
-            tel_stmt = select(Telemetry).order_by(desc(Telemetry.timestamp)).limit(1)  # type: ignore
+            tel_stmt = select(Telemetry).order_by(desc(Telemetry.timestamp)).limit(1)
             curr_tel = (await session.execute(tel_stmt)).scalar_one_or_none()
 
             river_stmt = (
                 select(RiverLevel).order_by(desc(RiverLevel.timestamp)).limit(100)
-            )  # type: ignore
+            )
             river_results = (await session.execute(river_stmt)).scalars().all()
             river_map = {}
             for r in river_results:
@@ -696,7 +732,7 @@ def report(
                     }
                 )
 
-            rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(40)  # type: ignore
+            rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(40)
             rf_results = (await session.execute(rf_stmt)).scalars().all()
             rf_map = {}
             for r in rf_results:
@@ -721,7 +757,7 @@ def report(
                 select(SoftwareInventory)
                 .order_by(desc(SoftwareInventory.timestamp))
                 .limit(20)
-            )  # type: ignore
+            )
             sw_results = (await session.execute(sw_stmt)).scalars().all()
             sw_map = {}
             for s in sw_results:
@@ -742,12 +778,12 @@ def report(
 
             stats_stmt = (
                 select(Statistic).order_by(desc(Statistic.timestamp)).limit(2000)
-            )  # type: ignore
+            )
             all_stats = (await session.execute(stats_stmt)).scalars().all()
 
             alert_stmt = (
                 select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(15)
-            )  # type: ignore
+            )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
         stats_map = {}
@@ -782,7 +818,7 @@ def report(
         .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.5rem; font-weight: 900; text-shadow: 0 0 15px var(--neon-green); }
         .box { border: 1px solid var(--neon-green); background: var(--glass-bg); padding: 0; position: relative; margin-bottom: 20px; border-radius: 4px; box-shadow: inset 0 0 10px rgba(0, 255, 65, 0.1); overflow: visible; display: flex; flex-direction: column; }
         .box-content { padding: 22px 15px 15px 15px; overflow-y: auto; flex-grow: 1; }
-        .box-label { position: absolute; top: -10px; left: 15px; background: var(--deep-bg); border: 1px solid var(--neon-green); padding: 2px 12px; color: var(--neon-green); font-weight: 900; font-size: 10px; z-index: 200; line-height: 1.2; box-shadow: 0 0 10px var(--deep-bg); }
+        .box-label { position: absolute; top: -11px; left: 15px; background: var(--deep-bg); border: 1px solid var(--neon-green); padding: 2px 12px; color: var(--neon-green); font-weight: 900; font-size: 10px; z-index: 200; line-height: 1.2; box-shadow: 0 0 10px var(--deep-bg); }
         .center-stack { display: flex; flex-direction: column; gap: 15px; height: 100%; }
         .map-frame { border: 1px solid var(--neon-green); border-radius: 4px; height: 450px; width: 100%; position: relative; overflow: hidden; background: #000; }
         .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0, 255, 65, 0.1); padding: 6px 0; }
@@ -857,7 +893,7 @@ def report(
                         <iframe src="data:text/html;base64,{{ map_data }}" style="width:100%; height:100%; border:none;"></iframe>
                     </div>
                     <div class="box" style="flex-grow: 1;">
-                        <div class="box-label">STRATEGIC DATA WALL // TOTAL EXTRACTED OSINT/SIGINT</div>
+                        <div class="box-label">STRATEGIC ADVISORY WALL // CURATED INTEL</div>
                         <div class="box-content">
                             {% for cat, items in stats.items() %}
                             <div class="cat-tag">// SECTOR: {{ cat }}</div>
@@ -888,7 +924,12 @@ def report(
                 <div class="col">
                     <div class="box">
                         <div class="box-label">AIRSPACE DENSITY</div>
-                        <div class="box-content"><div class="metric-big">{{ tel.aircraft_count if tel else '0' }}</div></div>
+                        <div class="box-content">
+                            <div class="metric-big">{{ tel.aircraft_count if tel else '0' }}</div>
+                            <div style="text-align:center; font-size:10px; color:#8b949e; margin-top:-10px;">
+                                MAPPED TARGETS: {{ tel.mapped_aircraft_count if tel else '0' }}
+                            </div>
+                        </div>
                     </div>
                     <div class="box" style="height: 400px;">
                         <div class="box-label">SIGINT SPECTRUM ANALYSIS</div>
@@ -938,7 +979,7 @@ def report(
             stats=final_stats,
             alerts=alerts,
             now=now_str,
-            version="0.45.3",
+            version="0.47.0",
             map_data=map_b64,
         )
 
