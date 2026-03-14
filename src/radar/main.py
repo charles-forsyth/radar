@@ -861,7 +861,7 @@ def report(
             stats=final_stats,
             alerts=alerts,
             now=now_str,
-            version="0.41.0",
+            version="0.42.0",
         )
         with open("tactical_intelligence_briefing.html", "w") as f:
             f.write(html)
