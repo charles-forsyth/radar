@@ -928,13 +928,16 @@ def brief(voice: bool = True):
 
 @app.command()
 def init():
-    """Init DB."""
+    """Initialize the local SQLite database and verify table integrity."""
 
     async def _init():
+        console.print(
+            "[bold blue]RADAR SYSTEM INITIALIZATION SEQUENCE STARTED[/bold blue]"
+        )
         await init_db()
+        console.print("[bold green]RADAR SYSTEM READY - DATABASE ONLINE[/bold green]")
 
     asyncio.run(_init())
-    console.print("[green]RADAR READY[/green]")
 
 
 if __name__ == "__main__":
