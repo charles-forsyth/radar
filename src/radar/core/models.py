@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from radar.db.models import EntityType, ConnectionType
 
 
 class TacticalSnapshot(BaseModel):
@@ -19,7 +18,7 @@ class TacticalSnapshot(BaseModel):
 
 class ExtractedEntity(BaseModel):
     name: str = Field(description="The unique name of the entity.")
-    type: EntityType = Field(
+    type: str = Field(
         description="The type of the entity (COMPANY, TECH, PERSON, MARKET)."
     )
     description: str = Field(
@@ -30,7 +29,7 @@ class ExtractedEntity(BaseModel):
 class ExtractedConnection(BaseModel):
     source_entity_name: str = Field(description="The name of the source entity.")
     target_entity_name: str = Field(description="The name of the target entity.")
-    type: ConnectionType = Field(description="The type of relationship.")
+    type: str = Field(description="The type of relationship.")
     description: str = Field(description="Context describing the relationship.")
 
 

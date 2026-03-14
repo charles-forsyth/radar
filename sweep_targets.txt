@@ -192,3 +192,18 @@ Air-gapped computing protocols, Faraday bags, and destroying data remanence
 Exploiting SDR (Software Defined Radio) to intercept unencrypted IoT/Smart Home data
 Using Meshtastic for encrypted, off-grid neighborhood watch dispatching
 Creating immutable, cryptographic ledgers locally without internet connection
+
+# OSINT / SIGINT EXPANSION
+Average signal-to-noise ratio (SNR) for P25 Phase II simulcast sites in Pennsylvania
+Estimated number of Flock Safety ALPR cameras per square mile in Upstate NY
+Daily flight counts of circling surveillance aircraft over major US metropolitan areas
+Frequency occupancy statistics for the 700MHz and 800MHz public safety bands in the Northeast
+Average bandwidth (MHz) and beacon interval (ms) for Starlink user terminal phased array signals
+Number of known vulnerabilities (CVEs) found in Motorola APX and Harris XL radio firmware 2025
+Current pricing ($) for 0-day exploits targeting Linux kernel and SSH on dark web forums
+Troop movement statistics and armored vehicle counts along the Polish-Belarusian border
+Casualty statistics and drone deployment counts in the Black Sea naval theater
+Percentage of successful phishing attacks bypasses for major financial sector MFA protocols
+Strategic petroleum reserve drawdown rates (Gallons/Day) in 2026
+Number of active state-sponsored disinformation bots detected on X (formerly Twitter) in the last 30 days
+Average latency (ms) and hop counts for Tor network circuit establishment in high-surveillance regions
