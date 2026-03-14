@@ -610,12 +610,13 @@ def ingest(
 
 
 @app.command()
+@app.command()
 def report(
     open_browser: bool = typer.Option(
         True, "--open", help="Open the report in browser."
     ),
 ):
-    """Generate the v0.45.0 Unified Intelligence HUD (Map + Data Wall)."""
+    """Generate the v0.45.2 Unified Intelligence HUD (Map + Data Wall)."""
     import jinja2
     from sqlalchemy import select, desc
     import asyncio
@@ -665,7 +666,7 @@ def report(
 
     async def _report():
         console.print(
-            "[bold blue]Forging v0.45 Unified Intelligence HUD...[/bold blue]"
+            "[bold blue]Forging v0.45.2 Unified Intelligence HUD...[/bold blue]"
         )
         map_b64 = await _generate_map_base64()
 
@@ -774,26 +775,27 @@ def report(
 
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=JetBrains+Mono:wght@400;700&display=swap');
-        :root { --neon-green: #00ff41; --deep-bg: #020406; --glass-bg: rgba(8, 12, 18, 0.85); --alert-red: #ff3131; }
-        body { background: var(--deep-bg); color: var(--neon-green); font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 10px; overflow-x: hidden; }
-        .hud-grid { display: grid; grid-template-columns: 320px 1fr 320px; gap: 12px; height: calc(100vh - 80px); }
-        .header { border: 1px solid var(--neon-green); padding: 12px 25px; display: flex; justify-content: space-between; align-items: center; background: rgba(0, 255, 65, 0.08); margin-bottom: 12px; border-radius: 4px; }
-        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.4rem; font-weight: 900; text-shadow: 0 0 15px var(--neon-green); }
-        .box { border: 1px solid var(--neon-green); background: var(--glass-bg); padding: 15px; position: relative; margin-bottom: 12px; border-radius: 4px; box-shadow: inset 0 0 10px rgba(0, 255, 65, 0.1); overflow-y: auto; }
-        .box-label { position: absolute; top: -10px; left: 15px; background: var(--deep-bg); border: 1px solid var(--neon-green); padding: 2px 10px; color: var(--neon-green); font-weight: 900; font-size: 9px; }
-        .center-stack { display: flex; flex-direction: column; gap: 12px; height: 100%; }
-        .map-frame { border: 1px solid var(--neon-green); border-radius: 4px; height: 450px; width: 100%; position: relative; overflow: hidden; }
-        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0, 255, 65, 0.1); padding: 5px 0; }
-        .metric-big { font-size: 2.5rem; font-weight: 900; text-align: center; margin: 15px 0; font-family: 'Orbitron'; color: #fff; text-shadow: 0 0 10px var(--neon-green); }
-        .data-card { border: 1px solid rgba(0, 255, 65, 0.2); background: rgba(5, 8, 12, 0.6); padding: 10px; margin-bottom: 10px; border-radius: 4px; transition: all 0.3s; }
+        :root { --neon-green: #00ff41; --deep-bg: #020406; --glass-bg: rgba(8, 12, 18, 0.9); --alert-red: #ff3131; }
+        body { background: var(--deep-bg); color: var(--neon-green); font-family: 'JetBrains Mono', monospace; margin: 0; padding: 20px; text-transform: uppercase; font-size: 10px; overflow-x: hidden; }
+        .hud-grid { display: grid; grid-template-columns: 320px 1fr 320px; gap: 15px; height: calc(100vh - 100px); margin-top: 10px; }
+        .header { border: 1px solid var(--neon-green); padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; background: rgba(0, 255, 65, 0.08); margin-bottom: 20px; border-radius: 4px; }
+        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.5rem; font-weight: 900; text-shadow: 0 0 15px var(--neon-green); }
+        .box { border: 1px solid var(--neon-green); background: var(--glass-bg); padding: 0; position: relative; margin-bottom: 20px; border-radius: 4px; box-shadow: inset 0 0 10px rgba(0, 255, 65, 0.1); overflow: visible; display: flex; flex-direction: column; }
+        .box-content { padding: 22px 15px 15px 15px; overflow-y: auto; flex-grow: 1; }
+        .box-label { position: absolute; top: -10px; left: 15px; background: var(--deep-bg); border: 1px solid var(--neon-green); padding: 2px 12px; color: var(--neon-green); font-weight: 900; font-size: 10px; z-index: 200; line-height: 1.2; box-shadow: 0 0 10px var(--deep-bg); }
+        .center-stack { display: flex; flex-direction: column; gap: 15px; height: 100%; }
+        .map-frame { border: 1px solid var(--neon-green); border-radius: 4px; height: 450px; width: 100%; position: relative; overflow: hidden; background: #000; }
+        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0, 255, 65, 0.1); padding: 6px 0; }
+        .metric-big { font-size: 2.8rem; font-weight: 900; text-align: center; margin: 15px 0; font-family: 'Orbitron'; color: #fff; text-shadow: 0 0 10px var(--neon-green); }
+        .data-card { border: 1px solid rgba(0, 255, 65, 0.2); background: rgba(5, 8, 12, 0.6); padding: 12px; margin-bottom: 12px; border-radius: 4px; transition: all 0.3s; }
         .data-card:hover { border-color: var(--neon-green); box-shadow: 0 0 15px rgba(0, 255, 65, 0.2); transform: translateY(-2px); }
-        .stat-desc { text-transform: none; font-size: 10px; color: #8b949e; line-height: 1.5; margin-top: 8px; border-top: 1px solid rgba(0, 255, 65, 0.1); padding-top: 8px; font-style: italic; }
+        .stat-desc { text-transform: none; font-size: 10px; color: #8b949e; line-height: 1.6; margin-top: 10px; border-top: 1px solid rgba(0, 255, 65, 0.1); padding-top: 10px; font-style: italic; }
         .trend-up { color: var(--alert-red); } .trend-down { color: #39d353; }
-        .cat-tag { color: #000; background: var(--neon-green); padding: 2px 8px; font-weight: 900; font-size: 9px; margin: 15px 0 10px 0; display: inline-block; }
-        ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: var(--neon-green); }
+        .cat-tag { color: #000; background: var(--neon-green); padding: 3px 10px; font-weight: 900; font-size: 10px; margin: 20px 0 12px 0; display: inline-block; }
+        ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-thumb { background: var(--neon-green); }
         .pulse { animation: pulse 2s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
-        .scan-line { width: 100%; height: 2px; background: rgba(0, 255, 65, 0.3); position: absolute; top: 0; left: 0; animation: scan 4s linear infinite; z-index: 100; pointer-events: none; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+        .scan-line { width: 100%; height: 3px; background: rgba(0, 255, 65, 0.4); position: absolute; top: 0; left: 0; animation: scan 5s linear infinite; z-index: 100; pointer-events: none; box-shadow: 0 0 15px var(--neon-green); }
         @keyframes scan { from { top: 0; } to { top: 100%; } }
         """
 
@@ -810,38 +812,44 @@ def report(
             </div>
             
             <div class="hud-grid">
-                <!-- LEFT COLUMN: ATMOSPHERICS & SECURITY -->
+                <!-- LEFT COLUMN -->
                 <div class="col">
                     <div class="box">
                         <div class="box-label">ENVIRONMENTAL SENSORS</div>
-                        <div class="metric-big">{{ tel.temp_f if tel else '--' }}°F</div>
+                        <div class="box-content"><div class="metric-big">{{ tel.temp_f if tel else '--' }}°F</div></div>
                     </div>
                     <div class="box">
                         <div class="box-label">NETWORK TOPOLOGY</div>
-                        <div class="stat-row"><span>ACTIVE NODES</span><span>{{ tel.lan_device_count if tel else '0' }}</span></div>
-                        <div class="stat-row"><span>SSH THREATS</span><span style="color:var(--alert-red)">{{ tel.ssh_failure_count if tel else '0' }}</span></div>
-                        <div class="stat-row"><span>NET LATENCY</span><span>{{ tel.internet_latency_ms if tel else '--' }} MS</span></div>
+                        <div class="box-content">
+                            <div class="stat-row"><span>ACTIVE NODES</span><span>{{ tel.lan_device_count if tel else '0' }}</span></div>
+                            <div class="stat-row"><span>SSH THREATS</span><span style="color:var(--alert-red)">{{ tel.ssh_failure_count if tel else '0' }}</span></div>
+                            <div class="stat-row"><span>NET LATENCY</span><span>{{ tel.internet_latency_ms if tel else '--' }} MS</span></div>
+                        </div>
                     </div>
                     <div class="box" style="height: 300px;">
                         <div class="box-label">HYDROLOGY Board</div>
-                        {% for r in rivers %}
-                        <div class="stat-row">
-                            <span style="color:#008f11">{{ r.name[:20] }}</span>
-                            <span>{{ r.val }} {{ r.unit }} <span style="color:#ffff00">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span></span>
+                        <div class="box-content">
+                            {% for r in rivers %}
+                            <div class="stat-row">
+                                <span style="color:#008f11">{{ r.name[:20] }}</span>
+                                <span>{{ r.val }} {{ r.unit }} <span style="color:#ffff00">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span></span>
+                            </div>
+                            {% endfor %}
                         </div>
-                        {% endfor %}
                     </div>
                     <div class="box" style="border-color: var(--alert-red);">
                         <div class="box-label" style="color:var(--alert-red); border-color:var(--alert-red);">ACTIVE THREAT LOG</div>
-                        {% for a in alerts[:6] %}
-                        <div style="color:var(--alert-red); font-size:9px; margin-bottom:5px; border-bottom:1px solid rgba(255,49,49,0.1); padding-bottom:3px;">
-                            >> {{ a.message }}
+                        <div class="box-content">
+                            {% for a in alerts[:6] %}
+                            <div style="color:var(--alert-red); font-size:10px; margin-bottom:6px; border-bottom:1px solid rgba(255,49,49,0.1); padding-bottom:4px;">
+                                >> {{ a.message }}
+                            </div>
+                            {% endfor %}
                         </div>
-                        {% endfor %}
                     </div>
                 </div>
 
-                <!-- CENTER COLUMN: TACTICAL MAP & STRATEGIC WALL -->
+                <!-- CENTER COLUMN -->
                 <div class="col center-stack">
                     <div class="map-frame">
                         <div class="box-label">TACTICAL SITUATION MAP (LIVE)</div>
@@ -850,60 +858,68 @@ def report(
                     </div>
                     <div class="box" style="flex-grow: 1;">
                         <div class="box-label">STRATEGIC DATA WALL // TOTAL EXTRACTED OSINT/SIGINT</div>
-                        {% for cat, items in stats.items() %}
-                        <div class="cat-tag">// SECTOR: {{ cat }}</div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                            {% for s in items %}
-                            <div class="data-card">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                                    <div style="font-size: 11px; color: var(--neon-green); font-weight: 900;">{{ s.label }}</div>
-                                    <div style="font-size: 1.2rem; font-weight: 900; text-align: right; color: #fff;">
-                                        {{ s.val }} {{ s.unit }}
-                                        {% if s.delta != 0 %}
-                                        <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 10px;">
-                                            ({% if s.delta > 0 %}+{% endif %}{{ "%.2f"|format(s.delta) }})
-                                        </span>
-                                        {% endif %}
+                        <div class="box-content">
+                            {% for cat, items in stats.items() %}
+                            <div class="cat-tag">// SECTOR: {{ cat }}</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                                {% for s in items %}
+                                <div class="data-card">
+                                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                                        <div style="font-size: 11px; color: var(--neon-green); font-weight: 900;">{{ s.label }}</div>
+                                        <div style="font-size: 1.2rem; font-weight: 900; text-align: right; color: #fff;">
+                                            {{ s.val }} {{ s.unit }}
+                                            {% if s.delta != 0 %}
+                                            <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 10px;">
+                                                ({% if s.delta > 0 %}+{% endif %}{{ "%.2f"|format(s.delta) }})
+                                            </span>
+                                            {% endif %}
+                                        </div>
                                     </div>
+                                    {% if s.description %}<div class="stat-desc">{{ s.description }}</div>{% endif %}
                                 </div>
-                                {% if s.description %}<div class="stat-desc">{{ s.description }}</div>{% endif %}
+                                {% endfor %}
                             </div>
                             {% endfor %}
                         </div>
-                        {% endfor %}
                     </div>
                 </div>
 
-                <!-- RIGHT COLUMN: SIGINT & SYSTEM -->
+                <!-- RIGHT COLUMN -->
                 <div class="col">
                     <div class="box">
                         <div class="box-label">AIRSPACE DENSITY</div>
-                        <div class="metric-big">{{ tel.aircraft_count if tel else '0' }}</div>
+                        <div class="box-content"><div class="metric-big">{{ tel.aircraft_count if tel else '0' }}</div></div>
                     </div>
                     <div class="box" style="height: 400px;">
                         <div class="box-label">SIGINT SPECTRUM ANALYSIS</div>
-                        {% for f in rf %}
-                        <div class="stat-row">
-                            <span style="color:#008f11">{{ f.freq }} MHZ</span>
-                            <span>{{ f.db }} DB <span style="color:#ffff00">({% if f.delta > 0 %}+{% endif %}{{ "%.2f"|format(f.delta) }})</span></span>
+                        <div class="box-content">
+                            {% for f in rf %}
+                            <div class="stat-row">
+                                <span style="color:#008f11">{{ f.freq }} MHZ</span>
+                                <span>{{ f.db }} DB <span style="color:#ffff00">({% if f.delta > 0 %}+{% endif %}{{ "%.2f"|format(f.delta) }})</span></span>
+                            </div>
+                            {% endfor %}
                         </div>
-                        {% endfor %}
                     </div>
                     <div class="box">
                         <div class="box-label">SOFTWARE ARSENAL</div>
-                        {% for s in sw %}
-                        <div class="stat-row">
-                            <span style="color:#008f11">{{ s.manager }}</span>
-                            <span>{{ s.count }} PKGS <span style="color:#ffff00">({% if s.delta > 0 %}+{% endif %}{{ s.delta }})</span></span>
+                        <div class="box-content">
+                            {% for s in sw %}
+                            <div class="stat-row">
+                                <span style="color:#008f11">{{ s.manager }}</span>
+                                <span>{{ s.count }} PKGS <span style="color:#ffff00">({% if s.delta > 0 %}+{% endif %}{{ s.delta }})</span></span>
+                            </div>
+                            {% endfor %}
                         </div>
-                        {% endfor %}
                     </div>
                     <div class="box" style="border-color: #008f11; color: #008f11;">
                         <div class="box-label" style="border-color: #008f11;">SYSTEM CORE HEALTH</div>
-                        <div style="font-size: 9px; line-height:1.6;">
-                            CORE UPTIME: 312H 14M<br>
-                            DB STATE: SQLITE RELATIONAL<br>
-                            INTEGRITY: 100% NOMINAL
+                        <div class="box-content">
+                            <div style="font-size: 10px; line-height:1.8;">
+                                CORE UPTIME: 312H 14M<br>
+                                DB STATE: SQLITE RELATIONAL<br>
+                                INTEGRITY: 100% NOMINAL
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -922,7 +938,7 @@ def report(
             stats=final_stats,
             alerts=alerts,
             now=now_str,
-            version="0.45.1",
+            version="0.45.2",
             map_data=map_b64,
         )
 
