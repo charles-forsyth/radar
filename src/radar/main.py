@@ -260,7 +260,14 @@ def sync(
                 for place in places:
                     console.print(f"[cyan]Routing to:[/cyan] {place}")
                     try:
-                        roam_cmd = ["roam", "route", place, "--weather", "-F", "gas"]
+                        roam_cmd = [
+                            "/home/chuck/.local/bin/roam",
+                            "route",
+                            place,
+                            "--weather",
+                            "-F",
+                            "gas",
+                        ]
                         result = subprocess.run(
                             roam_cmd, capture_output=True, text=True
                         )
@@ -638,13 +645,13 @@ def report(
         True, "--open", help="Open the report in browser."
     ),
 ):
-    """Generate a high-fidelity 'Total Intelligence Wall' for all extracted statistics."""
+    """Generate a high-fidelity 'Unified Data Wall' with full descriptive context."""
     import jinja2
     from sqlalchemy import select, desc
     import asyncio
 
     async def _report():
-        console.print("[bold blue]Forging v0.43 Total Intelligence Wall...[/bold blue]")
+        console.print("[bold blue]Forging v0.43 Contextual Data Wall...[/bold blue]")
 
         async with async_session() as session:
             # 1. Fetch Relational Telemetry
@@ -733,13 +740,12 @@ def report(
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
-        # UNLIMITED Categorization for the Data Wall
+        # Categorization with Context
         stats_map = {}
         for s in all_stats:
             key = (s.category, s.label)
             if key not in stats_map:
                 stats_map[key] = []
-            # NO LIMIT: We take the latest 2 entries for EVERY unique label to show deltas
             if len(stats_map[key]) < 2:
                 stats_map[key].append(s)
 
@@ -761,16 +767,16 @@ def report(
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=JetBrains+Mono:wght@400;700&display=swap');
         body { background-color: #020406; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; overflow-y: auto; }
-        .wall-grid { display: grid; grid-template-columns: 320px 1fr 320px; gap: 10px; min-height: 800px; }
+        .wall-grid { display: grid; grid-template-columns: 320px 1fr 320px; gap: 10px; }
         .header { grid-column: 1 / span 3; border: 1px solid #00ff41; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; background: #00ff4111; margin-bottom: 10px; }
         .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.3rem; font-weight: 900; text-shadow: 0 0 10px #00ff41; }
         .box { border: 1px solid #00ff41; background: #080c12; padding: 12px; position: relative; margin-bottom: 10px; box-shadow: inset 0 0 8px #00ff4111; overflow-y: auto; max-height: 800px; }
         .box-label { position: absolute; top: -8px; left: 12px; background: #020406; border: 1px solid #00ff41; padding: 0 6px; color: #00ff41; font-weight: bold; font-size: 8px; z-index: 10; }
-        .metric-big { font-size: 2.2rem; font-weight: 900; text-align: center; margin: 5px 0; }
+        .metric-big { font-size: 2.2rem; font-weight: 900; text-align: center; margin: 10px 0; }
         .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #002105; padding: 4px 0; }
         .stat-label { color: #008f11; }
         .cat-title { color: #000; background: #00ff41; padding: 2px 6px; font-weight: bold; font-size: 8px; margin-top: 15px; margin-bottom: 8px; display: inline-block; box-shadow: 0 0 5px #00ff41; }
-        .data-card { border: 1px solid #004111; background: #05080c; padding: 10px; margin-bottom: 8px; }
+        .data-card { border: 1px solid #004111; background: #05080c; padding: 6px; margin-bottom: 4px; }
         .stat-desc { text-transform: none; font-size: 10px; color: #8b949e; line-height: 1.4; margin-top: 8px; border-top: 1px solid #002105; padding-top: 6px; font-style: italic; }
         .trend-up { color: #ff3131; } .trend-down { color: #39d353; }
         .pulse { animation: pulse 2s infinite; }
@@ -781,10 +787,10 @@ def report(
 
         template = jinja2.Template("""
         <html>
-        <head><style>{{ css }}</style><title>RADAR TOTAL INTEL WALL</title></head>
+        <head><style>{{ css }}</style><title>RADAR CONTEXTUAL WALL</title></head>
         <body>
             <div class="header">
-                <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // UNLIMITED DATA WALL</div>
+                <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // CONTEXTUAL INTELLIGENCE WALL</div>
                 <div style="text-align: right; font-weight: bold;">SECTOR: TIOGA PA | {{ now }} | v{{ version }}</div>
             </div>
             
@@ -792,13 +798,12 @@ def report(
                 <div class="col">
                     <div class="box"><div class="box-label">ATMOSPHERICS</div><div class="metric-big">{{ tel.temp_f }}°F</div></div>
                     <div class="box">
-                        <div class="box-label">LAN & SECURITY TOPOLOGY</div>
+                        <div class="box-label">LAN & SECURITY</div>
                         <div class="stat-row"><span class="stat-label">ACTIVE NODES</span><span>{{ tel.lan_device_count }}</span></div>
                         <div class="stat-row"><span class="stat-label">SSH FAILURES</span><span style="color:#ff3131">{{ tel.ssh_failure_count }}</span></div>
-                        <div class="stat-row"><span class="stat-label">NET LATENCY</span><span>{{ tel.internet_latency_ms }} ms</span></div>
                     </div>
                     <div class="box" style="height: 300px;">
-                        <div class="box-label">HYDROLOGY SENSORS</div>
+                        <div class="box-label">HYDROLOGY Board</div>
                         {% for r in rivers %}<div class="stat-row"><span class="stat-label">{{ r.name[:20] }}</span><span>{{ r.val }} {{ r.unit }} <span style="color:#ffff00">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span></span></div>{% endfor %}
                     </div>
                     <div class="box" style="border-color: #ff3131;">
@@ -809,10 +814,10 @@ def report(
 
                 <div class="col">
                     <div class="box" style="min-height: 800px;">
-                        <div class="box-label">STRATEGIC DATA WALL // TOTAL EXTRACTED INTELLIGENCE</div>
+                        <div class="box-label">STRATEGIC DATA WALL // CONTEXTUAL INTELLIGENCE</div>
                         {% for cat, items in stats.items() %}
                         <div class="cat-title">// CATEGORY: {{ cat }}</div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                             {% for s in items %}
                             <div class="data-card">
                                 <div style="display: flex; justify-content: space-between; align-items: flex-start;">
@@ -820,11 +825,13 @@ def report(
                                     <div style="font-size: 1.1rem; font-weight: bold; text-align: right;">
                                         {{ s.val }} {{ s.unit }}
                                         {% if s.delta != 0 %}
-                                        <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 10px;">({% if s.delta > 0 %}+{% endif %}{{ "%.2f"|format(s.delta) }})</span>
+                                        <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 10px;">
+                                            ({% if s.delta > 0 %}+{% endif %}{{ "%.2f"|format(s.delta) }})
+                                        </span>
                                         {% endif %}
                                     </div>
                                 </div>
-                                {% if s.description %}<div class="stat-desc">{{ s.description[:250] }}...</div>{% endif %}
+                                {% if s.description %}<div class="stat-desc">{{ s.description }}</div>{% endif %}
                             </div>
                             {% endfor %}
                         </div>
@@ -835,16 +842,16 @@ def report(
                 <div class="col">
                     <div class="box"><div class="box-label">AIRSPACE DENSITY</div><div class="metric-big">{{ tel.aircraft_count }}</div></div>
                     <div class="box" style="height: 400px;">
-                        <div class="box-label">SIGINT SPECTRUM (ALL DETECTED PEAKS)</div>
+                        <div class="box-label">SIGINT SPECTRUM PEAKS</div>
                         {% for f in rf %}<div class="stat-row"><span class="stat-label">{{ f.freq }} MHZ</span><span>{{ f.db }} DB <span style="color:#ffff00">({% if f.delta > 0 %}+{% endif %}{{ "%.2f"|format(f.delta) }})</span></span></div>{% endfor %}
                     </div>
                     <div class="box">
-                        <div class="box-label">SYSTEM SOFTWARE ARSENAL</div>
+                        <div class="box-label">SYSTEM SOFTWARE</div>
                         {% for s in sw %}<div class="stat-row"><span class="stat-label">{{ s.manager }}</span><span>{{ s.count }} PKGS <span style="color:#ffff00">({% if s.delta > 0 %}+{% endif %}{{ s.delta }})</span></span></div>{% endfor %}
                     </div>
                     <div class="box" style="border-color: #008f11; color: #008f11;">
-                        <div class="box-label" style="border-color: #008f11;">SYSTEM HEALTH</div>
-                        <div style="font-size: 8px;">CORE UPTIME: 312H 14M<br>DB SIZE: SQLITE LOCAL<br>INTEGRITY: 100% NOMINAL</div>
+                        <div class="box-label" style="color: #008f11;">SYSTEM HEALTH</div>
+                        <div style="font-size: 8px;">CORE UPTIME: 312H 14M<br>INTEGRITY: 100% NOMINAL</div>
                     </div>
                 </div>
             </div>
@@ -867,7 +874,7 @@ def report(
         with open("tactical_intelligence_briefing.html", "w") as f:
             f.write(html)
         console.print(
-            "[bold green]Unlimited Data Wall forged: tactical_intelligence_briefing.html[/bold green]"
+            "[bold green]Contextual Wall forged: tactical_intelligence_briefing.html[/bold green]"
         )
         if open_browser:
             import subprocess

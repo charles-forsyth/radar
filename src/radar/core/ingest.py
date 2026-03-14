@@ -456,22 +456,22 @@ class BrowserIngestAgent:
                 try:
                     await page.wait_for_selector(".btable", timeout=15000)
                     extracted_feeds = await page.evaluate(
-                        """() => {
-                        const results = [];
-                        const rows = document.querySelectorAll('.btable tr');
-                        rows.forEach(row => {
-                            const cells = row.querySelectorAll('td');
-                            if (cells.length > 3) {
-                                const feedName = cells[1].innerText ? cells[1].innerText.trim().split('\\n').join(' - ') : "";
-                                const genre = cells[2].innerText ? cells[2].innerText.trim() : "";
-                                const listeners = cells[3].innerText ? cells[3].innerText.trim() : "";
-                                if (genre.includes('Public Safety') || parseInt(listeners) >= 0) {
-                                    results.push(`Feed: ${feedName} | Genre: ${genre} | Listeners: ${listeners}`);
-                                }
-                            }
-                        });
-                        return results;
-                    }"""
+                        "() => { "
+                        "const results = []; "
+                        "const rows = document.querySelectorAll('.btable tr'); "
+                        "rows.forEach(row => { "
+                        "const cells = row.querySelectorAll('td'); "
+                        "if (cells.length > 3) { "
+                        "const feedName = cells[1].innerText ? cells[1].innerText.trim().replace(/\\n/g, ' - ') : ''; "
+                        "const genre = cells[2].innerText ? cells[2].innerText.trim() : ''; "
+                        "const listeners = cells[3].innerText ? cells[3].innerText.trim() : ''; "
+                        "if (genre.includes('Public Safety') || parseInt(listeners) >= 0) { "
+                        "results.push(`Feed: ${feedName} | Genre: ${genre} | Listeners: ${listeners}`); "
+                        "} "
+                        "} "
+                        "}); "
+                        "return results; "
+                        "}"
                     )
                     content = "BROADCASTIFY LIVE FEED DATA:\n" + "\n".join(
                         extracted_feeds
