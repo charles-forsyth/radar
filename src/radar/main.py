@@ -644,7 +644,7 @@ def report(
     import asyncio
 
     async def _report():
-        console.print("[bold blue]Forging v0.38 Total Intelligence Wall...[/bold blue]")
+        console.print("[bold blue]Forging v0.40 Total Intelligence Wall...[/bold blue]")
 
         async with async_session() as session:
             # 1. Fetch Relational Telemetry
@@ -652,7 +652,7 @@ def report(
             tel_results = (await session.execute(tel_stmt)).scalars().all()
             curr_tel = tel_results[0] if len(tel_results) > 0 else None
 
-            # 2. Fetch Rivers (All stations)
+            # 2. Fetch Rivers
             river_stmt = (
                 select(RiverLevel).order_by(desc(RiverLevel.timestamp)).limit(100)
             )
@@ -721,7 +721,7 @@ def report(
                     }
                 )
 
-            # 5. Fetch ALL Statistics (Huge limit)
+            # 5. Fetch ALL Statistics
             stats_stmt = (
                 select(Statistic).order_by(desc(Statistic.timestamp)).limit(1000)
             )
@@ -733,7 +733,7 @@ def report(
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
-        # Complex Categorization for the Data Wall
+        # Categorize for the Data Wall
         stats_map = {}
         for s in all_stats:
             key = (s.category, s.label)
@@ -753,22 +753,22 @@ def report(
                     "val": c.value,
                     "unit": c.unit or "",
                     "delta": c.value - p.value if p else 0,
+                    "description": c.description,
                 }
             )
 
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=JetBrains+Mono:wght@400;700&display=swap');
-        body { background-color: #020406; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; }
-        .wall-grid { display: grid; grid-template-columns: 320px 1fr 320px; gap: 10px; height: calc(100vh - 80px); }
-        .header { border: 1px solid #00ff41; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; background: #00ff4111; margin-bottom: 10px; }
+        body { background-color: #020406; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; overflow-y: auto; }
+        .wall-grid { display: grid; grid-template-columns: 320px 1fr 320px; gap: 10px; min-height: 800px; }
+        .header { grid-column: 1 / span 3; border: 1px solid #00ff41; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; background: #00ff4111; margin-bottom: 10px; }
         .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.3rem; font-weight: 900; text-shadow: 0 0 10px #00ff41; }
-        .box { border: 1px solid #00ff41; background: #080c12; padding: 12px; position: relative; box-shadow: inset 0 0 8px #00ff4111; overflow-y: auto; display: flex; flex-direction: column; }
+        .box { border: 1px solid #00ff41; background: #080c12; padding: 12px; position: relative; margin-bottom: 10px; box-shadow: inset 0 0 8px #00ff4111; overflow-y: auto; max-height: 800px; }
         .box-label { position: absolute; top: -8px; left: 12px; background: #020406; border: 1px solid #00ff41; padding: 0 6px; color: #00ff41; font-weight: bold; font-size: 8px; z-index: 10; }
         .metric-big { font-size: 2.2rem; font-weight: 900; text-align: center; margin: 10px 0; }
-        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #002105; padding: 4px 0; min-height: 20px; align-items: center; }
-        .stat-label { color: #008f11; flex: 1; }
-        .stat-val { font-weight: bold; margin-left: 10px; }
-        .cat-title { color: #000; background: #00ff41; padding: 2px 6px; font-weight: bold; font-size: 8px; margin-top: 15px; margin-bottom: 8px; display: inline-block; box-shadow: 0 0 5px #00ff41; width: fit-content; }
+        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #002105; padding: 4px 0; }
+        .stat-label { color: #008f11; }
+        .cat-title { color: #000; background: #00ff41; padding: 2px 6px; font-weight: bold; font-size: 8px; margin-top: 15px; margin-bottom: 8px; display: inline-block; box-shadow: 0 0 5px #00ff41; }
         .data-card { border: 1px solid #004111; background: #05080c; padding: 8px; margin-bottom: 6px; }
         .stat-desc { text-transform: none; font-size: 8px; color: #666; line-height: 1.2; margin-top: 4px; border-top: 1px solid #002105; padding-top: 4px; }
         .trend-up { color: #ff3131; } .trend-down { color: #39d353; }
@@ -788,7 +788,6 @@ def report(
             </div>
             
             <div class="wall-grid">
-                <!-- LEFT SIDEBAR: ENVIRONMENTAL & SECURITY -->
                 <div class="col">
                     <div class="box"><div class="box-label">ATMOSPHERICS</div><div class="metric-big">{{ tel.temp_f }}°F</div></div>
                     <div class="box">
@@ -807,10 +806,8 @@ def report(
                     </div>
                 </div>
 
-                
-                <!-- CENTER: THE TOTAL DATA WALL -->
-                <div class="col" style="display: flex; flex-direction: column;">
-                    <div class="box" style="flex: 1;">
+                <div class="col">
+                    <div class="box" style="min-height: 750px;">
                         <div class="box-label">STRATEGIC DATA WALL // ALL EXTRACTED NUMERICAL INTELLIGENCE</div>
                         {% for cat, items in stats.items() %}
                         <div class="cat-title">// CATEGORY: {{ cat }}</div>
@@ -822,15 +819,11 @@ def report(
                                     <div style="font-size: 0.9rem; font-weight: bold; text-align: right;">
                                         {{ s.val }} {{ s.unit }}
                                         {% if s.delta != 0 %}
-                                        <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 8px;">
-                                            ({% if s.delta > 0 %}+{% endif %}{{ "%.2f"|format(s.delta) }})
-                                        </span>
+                                        <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 8px;">({% if s.delta > 0 %}+{% endif %}{{ "%.2f"|format(s.delta) }})</span>
                                         {% endif %}
                                     </div>
                                 </div>
-                                {% if s.description %}
-                                <div class="stat-desc">{{ s.description[:120] }}...</div>
-                                {% endif %}
+                                {% if s.description %}<div class="stat-desc">{{ s.description[:120] }}...</div>{% endif %}
                             </div>
                             {% endfor %}
                         </div>
@@ -838,13 +831,6 @@ def report(
                     </div>
                 </div>
 
-                            {% endfor %}
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-
-                <!-- RIGHT SIDEBAR: SIGNALS & SOFTWARE -->
                 <div class="col">
                     <div class="box"><div class="box-label">AIRSPACE DENSITY</div><div class="metric-big">{{ tel.aircraft_count }}</div></div>
                     <div class="box" style="height: 400px;">
@@ -857,7 +843,7 @@ def report(
                     </div>
                     <div class="box" style="border-color: #008f11; color: #008f11;">
                         <div class="box-label" style="border-color: #008f11;">SYSTEM HEALTH</div>
-                        <div style="font-size: 8px;">CORE UPTIME: 312H 14M<br>DB SIZE: SQLITE LOCAL<br>INTEGRITY: 100% NOMINAL</div>
+                        <div style="font-size: 8px;">CORE UPTIME: 312H 14M<br>INTEGRITY: 100% NOMINAL</div>
                     </div>
                 </div>
             </div>
@@ -875,20 +861,20 @@ def report(
             stats=final_stats,
             alerts=alerts,
             now=now_str,
-            version="0.39.0",
+            version="0.40.0",
         )
-
-        fname = "tactical_intelligence_briefing.html"
-        with open(fname, "w") as f:
+        with open("tactical_intelligence_briefing.html", "w") as f:
             f.write(html)
         console.print(
-            f"[bold green]Total Intelligence Wall forged: {fname}[/bold green]"
+            "[bold green]Total Intelligence Wall forged: tactical_intelligence_briefing.html[/bold green]"
         )
         if open_browser:
             import subprocess
 
             try:
-                subprocess.run(["xdg-open", fname], check=False)
+                subprocess.run(
+                    ["xdg-open", "tactical_intelligence_briefing.html"], check=False
+                )
             except Exception:
                 pass
 
