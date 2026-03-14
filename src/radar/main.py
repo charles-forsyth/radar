@@ -644,7 +644,7 @@ def report(
     import asyncio
 
     async def _report():
-        console.print("[bold blue]Forging v0.40 Total Intelligence Wall...[/bold blue]")
+        console.print("[bold blue]Forging v0.43 Total Intelligence Wall...[/bold blue]")
 
         async with async_session() as session:
             # 1. Fetch Relational Telemetry
@@ -723,7 +723,7 @@ def report(
 
             # 5. Fetch ALL Statistics
             stats_stmt = (
-                select(Statistic).order_by(desc(Statistic.timestamp)).limit(1000)
+                select(Statistic).order_by(desc(Statistic.timestamp)).limit(2000)
             )
             all_stats = (await session.execute(stats_stmt)).scalars().all()
 
@@ -733,12 +733,13 @@ def report(
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
-        # Categorize for the Data Wall
+        # UNLIMITED Categorization for the Data Wall
         stats_map = {}
         for s in all_stats:
             key = (s.category, s.label)
             if key not in stats_map:
                 stats_map[key] = []
+            # NO LIMIT: We take the latest 2 entries for EVERY unique label to show deltas
             if len(stats_map[key]) < 2:
                 stats_map[key].append(s)
 
@@ -765,12 +766,12 @@ def report(
         .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.3rem; font-weight: 900; text-shadow: 0 0 10px #00ff41; }
         .box { border: 1px solid #00ff41; background: #080c12; padding: 12px; position: relative; margin-bottom: 10px; box-shadow: inset 0 0 8px #00ff4111; overflow-y: auto; max-height: 800px; }
         .box-label { position: absolute; top: -8px; left: 12px; background: #020406; border: 1px solid #00ff41; padding: 0 6px; color: #00ff41; font-weight: bold; font-size: 8px; z-index: 10; }
-        .metric-big { font-size: 2.2rem; font-weight: 900; text-align: center; margin: 10px 0; }
+        .metric-big { font-size: 2.2rem; font-weight: 900; text-align: center; margin: 5px 0; }
         .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #002105; padding: 4px 0; }
         .stat-label { color: #008f11; }
         .cat-title { color: #000; background: #00ff41; padding: 2px 6px; font-weight: bold; font-size: 8px; margin-top: 15px; margin-bottom: 8px; display: inline-block; box-shadow: 0 0 5px #00ff41; }
-        .data-card { border: 1px solid #004111; background: #05080c; padding: 8px; margin-bottom: 6px; }
-        .stat-desc { text-transform: none; font-size: 8px; color: #666; line-height: 1.2; margin-top: 4px; border-top: 1px solid #002105; padding-top: 4px; }
+        .data-card { border: 1px solid #004111; background: #05080c; padding: 10px; margin-bottom: 8px; }
+        .stat-desc { text-transform: none; font-size: 10px; color: #8b949e; line-height: 1.4; margin-top: 8px; border-top: 1px solid #002105; padding-top: 6px; font-style: italic; }
         .trend-up { color: #ff3131; } .trend-down { color: #39d353; }
         .pulse { animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
@@ -783,7 +784,7 @@ def report(
         <head><style>{{ css }}</style><title>RADAR TOTAL INTEL WALL</title></head>
         <body>
             <div class="header">
-                <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // TOTAL INTELLIGENCE WALL</div>
+                <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // UNLIMITED DATA WALL</div>
                 <div style="text-align: right; font-weight: bold;">SECTOR: TIOGA PA | {{ now }} | v{{ version }}</div>
             </div>
             
@@ -807,23 +808,23 @@ def report(
                 </div>
 
                 <div class="col">
-                    <div class="box" style="min-height: 750px;">
-                        <div class="box-label">STRATEGIC DATA WALL // ALL EXTRACTED NUMERICAL INTELLIGENCE</div>
+                    <div class="box" style="min-height: 800px;">
+                        <div class="box-label">STRATEGIC DATA WALL // TOTAL EXTRACTED INTELLIGENCE</div>
                         {% for cat, items in stats.items() %}
                         <div class="cat-title">// CATEGORY: {{ cat }}</div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                             {% for s in items %}
                             <div class="data-card">
                                 <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                                    <div style="font-size: 8px; color: #00ff41; font-weight: bold;">{{ s.label }}</div>
-                                    <div style="font-size: 0.9rem; font-weight: bold; text-align: right;">
+                                    <div style="font-size: 10px; color: #00ff41; font-weight: bold;">{{ s.label }}</div>
+                                    <div style="font-size: 1.1rem; font-weight: bold; text-align: right;">
                                         {{ s.val }} {{ s.unit }}
                                         {% if s.delta != 0 %}
-                                        <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 8px;">({% if s.delta > 0 %}+{% endif %}{{ "%.2f"|format(s.delta) }})</span>
+                                        <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 10px;">({% if s.delta > 0 %}+{% endif %}{{ "%.2f"|format(s.delta) }})</span>
                                         {% endif %}
                                     </div>
                                 </div>
-                                {% if s.description %}<div class="stat-desc">{{ s.description[:120] }}...</div>{% endif %}
+                                {% if s.description %}<div class="stat-desc">{{ s.description[:250] }}...</div>{% endif %}
                             </div>
                             {% endfor %}
                         </div>
@@ -843,7 +844,7 @@ def report(
                     </div>
                     <div class="box" style="border-color: #008f11; color: #008f11;">
                         <div class="box-label" style="border-color: #008f11;">SYSTEM HEALTH</div>
-                        <div style="font-size: 8px;">CORE UPTIME: 312H 14M<br>INTEGRITY: 100% NOMINAL</div>
+                        <div style="font-size: 8px;">CORE UPTIME: 312H 14M<br>DB SIZE: SQLITE LOCAL<br>INTEGRITY: 100% NOMINAL</div>
                     </div>
                 </div>
             </div>
@@ -861,12 +862,12 @@ def report(
             stats=final_stats,
             alerts=alerts,
             now=now_str,
-            version="0.42.0",
+            version="0.43.0",
         )
         with open("tactical_intelligence_briefing.html", "w") as f:
             f.write(html)
         console.print(
-            "[bold green]Total Intelligence Wall forged: tactical_intelligence_briefing.html[/bold green]"
+            "[bold green]Unlimited Data Wall forged: tactical_intelligence_briefing.html[/bold green]"
         )
         if open_browser:
             import subprocess
@@ -879,6 +880,50 @@ def report(
                 pass
 
     asyncio.run(_report())
+
+
+@app.command()
+def stats(
+    category: Optional[str] = typer.Option(None, help="Filter by category."),
+    limit: int = typer.Option(100, help="Limit output results."),
+):
+    """View all extracted statistics with their full context in the terminal."""
+    from rich.table import Table
+
+    async def _stats():
+        async with async_session() as session:
+            stmt = select(Statistic).order_by(desc(Statistic.timestamp))
+            if category:
+                stmt = stmt.where(Statistic.category == category.upper())
+            stmt = stmt.limit(limit)
+
+            results = (await session.execute(stmt)).scalars().all()
+
+            if not results:
+                console.print("[yellow]No statistics found.[/yellow]")
+                return
+
+            table = Table(
+                title="[bold green]RADAR EXTRACTED INTELLIGENCE LEDGER[/bold green]"
+            )
+            table.add_column("TIMESTAMP", style="dim")
+            table.add_column("CATEGORY", style="bold cyan")
+            table.add_column("LABEL", style="bold white")
+            table.add_column("VALUE", justify="right", style="bold green")
+            table.add_column("CONTEXT", style="dim", max_width=60)
+
+            for s in results:
+                table.add_row(
+                    s.timestamp.strftime("%Y-%m-%d %H:%M"),
+                    s.category,
+                    s.label,
+                    f"{s.value} {s.unit or ''}",
+                    s.description or "N/A",
+                )
+
+            console.print(table)
+
+    asyncio.run(_stats())
 
 
 @app.command()
