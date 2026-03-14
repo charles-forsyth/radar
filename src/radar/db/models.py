@@ -1,96 +1,17 @@
 import uuid
 from datetime import datetime
-from enum import Enum
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 from sqlmodel import SQLModel, Field
-from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column, JSON
-
-
-class ConnectionType(str, Enum):
-    SUPPORTS = "SUPPORTS"
-    DRIVES = "DRIVES"
-    COMPETES_WITH = "COMPETES"
-    PART_OF = "PART_OF"
-    MENTIONS = "MENTIONS"
-
-
-class EntityType(str, Enum):
-    COMPANY = "COMPANY"
-    TECH = "TECH"
-    PERSON = "PERSON"
-    MARKET = "MARKET"
 
 
 class Signal(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    date: datetime = Field(default_factory=datetime.now)
-    title: str
+    title: str = Field(index=True)
+    content: str
+    source: str
     url: Optional[str] = None
-    content: str
-    raw_text: Optional[str] = None
-    source: str = "web"
-    vector: Optional[List[float]] = Field(default=None, sa_column=Column(Vector(3072)))
-
-
-class Trend(SQLModel, table=True):
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    name: str = Field(unique=True, index=True)
-    description: str
-    velocity: str = "emerging"
-    vector: Optional[List[float]] = Field(default=None, sa_column=Column(Vector(3072)))
-    first_seen: datetime = Field(default_factory=datetime.now)
-    last_seen: datetime = Field(default_factory=datetime.now)
-
-
-class Entity(SQLModel, table=True):
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    name: str = Field(unique=True, index=True)
-    type: EntityType
-    details: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
-    vector: Optional[List[float]] = Field(default=None, sa_column=Column(Vector(3072)))
-    first_seen: datetime = Field(default_factory=datetime.now)
-    last_seen: datetime = Field(default_factory=datetime.now)
-
-
-class Connection(SQLModel, table=True):
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    source_uuid: uuid.UUID = Field(index=True)
-    target_uuid: uuid.UUID = Field(index=True)
-    type: ConnectionType
-    meta_data: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
-    first_seen: datetime = Field(default_factory=datetime.now)
-    last_seen: datetime = Field(default_factory=datetime.now)
-
-
-class ChatSession(SQLModel, table=True):
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.now)
-    title: Optional[str] = None
-
-
-class ChatMessage(SQLModel, table=True):
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    session_id: uuid.UUID = Field(index=True)
-    role: str  # "user" or "assistant"
-    content: str
-    created_at: datetime = Field(default_factory=datetime.now)
-
-
-class Watchpoint(SQLModel, table=True):
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    topic: str = Field(unique=True, index=True)
-    description: str
-    created_at: datetime = Field(default_factory=datetime.now)
-    is_active: bool = Field(default=True)
-
-
-class Alert(SQLModel, table=True):
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    watchpoint_id: uuid.UUID = Field(index=True)
-    signal_id: uuid.UUID = Field(index=True)
-    reason: str
-    created_at: datetime = Field(default_factory=datetime.now)
+    date: datetime = Field(default_factory=datetime.now, index=True)
 
 
 class TacticalAlert(SQLModel, table=True):
@@ -99,7 +20,7 @@ class TacticalAlert(SQLModel, table=True):
     severity: str  # INFO, WARNING, CRITICAL
     message: str
     data_context: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=datetime.now, index=True)
 
 
 class Telemetry(SQLModel, table=True):
@@ -138,7 +59,23 @@ class Statistic(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     timestamp: datetime = Field(default_factory=datetime.now, index=True)
     category: str = Field(index=True)  # e.g., "FINANCE", "LOGISTICS", "INFRASTRUCTURE"
-    label: str = Field(index=True)     # e.g., "Gas Price", "Wildfire Acres", "GPU Benchmarks"
+    label: str = Field(
+        index=True
+    )  # e.g., "Gas Price", "Wildfire Acres", "GPU Benchmarks"
     value: float
-    unit: Optional[str] = None         # e.g., "USD", "Acres", "t/s"
-    source_signal_id: Optional[uuid.UUID] = Field(default=None, foreign_key="signal.id")
+    unit: Optional[str] = None  # e.g., "USD", "Acres", "t/s"
+    source_signal_id: Optional[uuid.UUID] = Field(default=None)
+
+
+class ChatSession(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    title: str
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
+class ChatMessage(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    session_id: uuid.UUID = Field(foreign_key="chatsession.id")
+    role: str  # user, assistant
+    content: str
+    timestamp: datetime = Field(default_factory=datetime.now)

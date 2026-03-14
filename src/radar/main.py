@@ -1,7 +1,7 @@
 import asyncio
 import click
 import typer
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
@@ -17,10 +17,7 @@ from radar.core.ingest import (
 from radar.db.engine import async_session
 from radar.db.init import init_db
 from radar.db.models import (
-    Entity,
-    Connection,
     Signal,
-    Trend,
     ChatSession,
     ChatMessage,
     TacticalAlert,
@@ -85,7 +82,7 @@ async def do_ask_logic(
                     hist_stmt = (
                         select(ChatMessage)
                         .where(ChatMessage.session_id == active_session_id)  # type: ignore
-                        .order_by(ChatMessage.created_at)  # type: ignore
+                        .order_by(ChatMessage.timestamp)  # type: ignore
                     )
                     for msg in (await session.execute(hist_stmt)).scalars().all():
                         history.append({"role": msg.role, "content": msg.content})
@@ -451,125 +448,52 @@ def sync(
 
 
 async def save_ingest_to_db(signal, kg, intel: IntelligenceAgent):
-    """Helper to persist a signal and its extraction to the database."""
-    items = [f"{e.name}: {e.description}" for e in kg.entities] + [
-        f"{t.name}: {t.description}" for t in kg.trends
-    ]
-    # Re-embed the main signal content for semantic search
-    signal.vector = await intel.get_embedding(
-        f"{signal.title}\n{signal.content[:2000]}"
-    )
-
-    # NEW: Extract structured statistics from content
+    """Helper to persist a signal and its extracted stats to SQLite."""
+    # Extract structured statistics from content
     extracted_stats = intel.extract_stats(signal.content)
 
-    vectors = await intel.get_batch_embeddings(items) if items else []
-    ent_vecs, trend_vecs = (
-        vectors[: len(kg.entities)],
-        vectors[len(kg.entities) :],
-    )
     async with async_session() as session:
-        session.add(signal)
-        await session.flush()
+        try:
+            session.add(signal)
+            await session.flush()
 
-        # Save extracted stats
-        for s in extracted_stats:
-            # Categorize based on title keywords
-            category = "GENERAL"
-            t_lower = signal.title.lower()
-            if any(
-                k in t_lower
-                for k in ["price", "cost", "economic", "finance", "route intel", "gas"]
-            ):
-                category = "FINANCE"
-            elif any(k in t_lower for k in ["benchmark", "performance", "fps", "t/s"]):
-                category = "TECH_METRICS"
-            elif any(k in t_lower for k in ["capacity", "count", "stats"]):
-                category = "LOGISTICS"
+            # Save extracted stats
+            for s in extracted_stats:
+                category = "GENERAL"
+                t_lower = signal.title.lower()
+                if any(
+                    k in t_lower
+                    for k in [
+                        "price",
+                        "cost",
+                        "economic",
+                        "finance",
+                        "route intel",
+                        "gas",
+                    ]
+                ):
+                    category = "FINANCE"
+                elif any(
+                    k in t_lower for k in ["benchmark", "performance", "fps", "t/s"]
+                ):
+                    category = "TECH_METRICS"
+                elif any(k in t_lower for k in ["capacity", "count", "stats"]):
+                    category = "LOGISTICS"
 
-            session.add(
-                Statistic(
-                    category=category,
-                    label=s["label"],
-                    value=s["value"],
-                    unit=s["unit"],
-                    source_signal_id=signal.id,
-                )
-            )
-
-        entity_map = {}
-        for idx, e in enumerate(kg.entities):
-            exist = (
-                await session.execute(select(Entity).where(Entity.name == e.name))
-            ).scalar_one_or_none()
-            if exist:
-                entity_map[e.name] = exist.id
-                exist.last_seen = datetime.now()
-                session.add(exist)
-            else:
-                new_e = Entity(
-                    name=e.name,
-                    type=e.type,
-                    details={"description": e.description},
-                    vector=ent_vecs[idx] if idx < len(ent_vecs) else None,
-                )
-                session.add(new_e)
-                await session.flush()
-                entity_map[e.name] = new_e.id
-        for idx, t in enumerate(kg.trends):
-            exist_trend = (
-                await session.execute(select(Trend).where(Trend.name == t.name))
-            ).scalar_one_or_none()
-            if exist_trend:
-                exist_trend.last_seen = datetime.now()
-                session.add(exist_trend)
-            else:
                 session.add(
-                    Trend(
-                        name=t.name,
-                        description=t.description,
-                        velocity=t.velocity,
-                        vector=trend_vecs[idx] if idx < len(trend_vecs) else None,
+                    Statistic(
+                        category=category,
+                        label=s["label"],
+                        value=s["value"],
+                        unit=s["unit"],
+                        source_signal_id=signal.id,
                     )
                 )
-                for c in kg.connections:
-                    sid, tid = (
-                        entity_map.get(c.source_entity_name),
-                        entity_map.get(c.target_entity_name),
-                    )
-                    if sid and tid:
-                        exist_conn = (
-                            await session.execute(
-                                select(Connection)
-                                .where(Connection.source_uuid == sid)  # type: ignore
-                                .where(Connection.target_uuid == tid)  # type: ignore
-                                .where(Connection.type == c.type)
-                            )
-                        ).scalar_one_or_none()
-
-                if exist_conn:
-                    exist_conn.last_seen = datetime.now()
-                    session.add(exist_conn)
-                else:
-                    session.add(
-                        Connection(
-                            source_uuid=sid,
-                            target_uuid=tid,
-                            type=c.type,
-                            meta_data={
-                                "description": c.description,
-                                "signal_id": str(signal.id),
-                            },
-                        )
-                    )
-
-            try:
-                await session.commit()
-            except Exception as e:
-                await session.rollback()
-                # Ignore duplicate key errors caused by concurrent entity creation
-                if "duplicate key value violates unique constraint" not in str(e):
-                    raise
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            if "duplicate key" not in str(e).lower():
+                raise
 
 
 async def run_ingest(
@@ -671,260 +595,117 @@ def report(
         True, "--open", help="Open the report in browser."
     ),
 ):
-    """Generate the ultimate 'Unified Command Center' report merging all stats and intelligence."""
+    """Generate a high-fidelity 'SQLite Data Console' for pre-defined stats tracking."""
     import jinja2
     from sqlalchemy import select, desc
-    import re
     import asyncio
 
     async def _report():
-        console.print("[bold blue]Forging v0.35 Unified Command Center...[/bold blue]")
-
-        from radar.core.ingest import IntelligenceAgent
-
-        intel = IntelligenceAgent()
+        console.print("[bold blue]Forging SQLite Tactical Data Console...[/bold blue]")
 
         async with async_session() as session:
-            # 1. Telemetry
+            # 1. Fetch Relational Data
             tel_stmt = select(Telemetry).order_by(desc(Telemetry.timestamp)).limit(2)
             tel_results = (await session.execute(tel_stmt)).scalars().all()
             curr_tel = tel_results[0] if len(tel_results) > 0 else None
 
-            # 2. Rivers
             river_stmt = (
-                select(RiverLevel).order_by(desc(RiverLevel.timestamp)).limit(60)
+                select(RiverLevel).order_by(desc(RiverLevel.timestamp)).limit(10)
             )
             river_results = (await session.execute(river_stmt)).scalars().all()
 
-            # 3. RF Peaks
-            rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(30)
-            rf_peaks_all = (await session.execute(rf_stmt)).scalars().all()
+            rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(12)
+            rf_peaks = (await session.execute(rf_stmt)).scalars().all()
 
-            # 4. Software
             sw_stmt = (
                 select(SoftwareInventory)
                 .order_by(desc(SoftwareInventory.timestamp))
-                .limit(20)
+                .limit(4)
             )
-            sw_all = (await session.execute(sw_stmt)).scalars().all()
+            sw_inv = (await session.execute(sw_stmt)).scalars().all()
 
-            # 5. Alerts
             alert_stmt = (
-                select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(15)
+                select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(10)
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
-            # 6. Strategic Stats
             stats_stmt = (
                 select(Statistic).order_by(desc(Statistic.timestamp)).limit(100)
             )
             all_stats = (await session.execute(stats_stmt)).scalars().all()
 
-            # 7. Narrative Intelligence (Dispatches)
-            research_stmt = (
-                select(Signal)
-                .where(Signal.title.contains("Deep Research"))
-                .order_by(desc(Signal.date))
-                .limit(6)
-            )
-            research_signals = (await session.execute(research_stmt)).scalars().all()
-
-        # --- SYNTHESIS LOGIC ---
-
-        # Security Score
-        ssh_count = curr_tel.ssh_failure_count if curr_tel else 0
-        alert_count = len([a for a in alerts if a.severity in ["WARNING", "CRITICAL"]])
-        sec_score = max(0, 100 - (ssh_count * 1.5) - (alert_count * 10))
-
-        # Hydrology
-        station_data = {}
-        for r in river_results:
-            if r.station_name not in station_data:
-                station_data[r.station_name] = []
-            if len(station_data[r.station_name]) < 2:
-                station_data[r.station_name].append(r)
-        latest_rivers = []
-        for name, items in station_data.items():
-            curr, prev = items[0], (items[1] if len(items) > 1 else None)
-            latest_rivers.append(
-                {
-                    "name": name,
-                    "val": curr.value,
-                    "unit": curr.unit,
-                    "delta": curr.value - prev.value if prev else 0,
-                }
-            )
-
-        # SIGINT
-        peak_map = {}
-        for r in rf_peaks_all:
-            f_key = round(r.frequency_mhz, 1)
-            if f_key not in peak_map:
-                peak_map[f_key] = []
-            if len(peak_map[f_key]) < 2:
-                peak_map[f_key].append(r)
-        processed_rf = []
-        for f, items in peak_map.items():
-            c, p = items[0], (items[1] if len(items) > 1 else None)
-            processed_rf.append(
-                {
-                    "freq": c.frequency_mhz,
-                    "db": c.power_db,
-                    "delta": c.power_db - p.power_db if p else 0,
-                }
-            )
-        processed_rf.sort(key=lambda x: x["db"], reverse=True)
-
-        # Strategic Data Wall
-        stats_map = {}
-        for s in all_stats:
-            key = (s.category, s.label)
-            if key not in stats_map:
-                stats_map[key] = []
-            if len(stats_map[key]) < 2:
-                stats_map[key].append(s)
+        # Group by category
         categorized_stats = {}
-        for key, items in stats_map.items():
-            cat, label = key
-            curr, prev = items[0], (items[1] if len(items) > 1 else None)
-            if cat not in categorized_stats:
-                categorized_stats[cat] = []
-            categorized_stats[cat].append(
-                {
-                    "label": label,
-                    "val": curr.value,
-                    "unit": curr.unit or "",
-                    "delta": curr.value - prev.value if prev else 0,
-                }
-            )
+        for s in all_stats:
+            if s.category not in categorized_stats:
+                categorized_stats[s.category] = []
+            if len(categorized_stats[s.category]) < 10:
+                categorized_stats[s.category].append(s)
 
-        # Narrative Synthesis
-        async def synthesize_vignette(signal):
-            prompt = f"Extract the single most critical intelligence finding from {signal.title}. Factual and concise."
-            summary = intel._run_tool(
-                intel.summarize_bin, f"Question: {prompt}\nContext: {signal.content}"
-            )
-            return re.sub(r"🎯.*?\\n|📌.*?\\n", "", summary).strip()
-
-        with console.status(
-            "[bold cyan]Synthesizing tactical vignettes...[/bold cyan]"
-        ):
-            tasks = [synthesize_vignette(s) for s in research_signals]
-            summaries = await asyncio.gather(*tasks)
-            vignettes = []
-            for s, summary in zip(research_signals, summaries):
-                vignettes.append(
-                    {
-                        "title": s.title.replace("Deep Research - ", "").upper(),
-                        "body": summary,
-                    }
-                )
-
-        # --- UI DESIGN ---
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=JetBrains+Mono:wght@400;700&display=swap');
-        body { background-color: #030508; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; overflow-y: auto; }
-        .unified-grid { display: grid; grid-template-columns: 320px 1fr 320px; gap: 15px; }
-        .header { grid-column: 1 / span 3; border: 2px solid #00ff41; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; background: #00ff4111; margin-bottom: 10px; }
-        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.4rem; font-weight: 900; }
-        .box { border: 1px solid #00ff41; background: #080c12; padding: 15px; position: relative; margin-bottom: 15px; box-shadow: inset 0 0 10px #00ff4111; }
+        body { background-color: #030508; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 20px; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+        .grid { display: grid; grid-template-columns: 350px 1fr 350px; gap: 15px; height: auto; }
+        .header { grid-column: 1 / span 3; border: 2px solid #00ff41; padding: 15px; display: flex; justify-content: space-between; align-items: center; background: #00ff4111; margin-bottom: 20px; }
+        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.5rem; font-weight: 900; }
+        .box { border: 1px solid #00ff41; background: #080c12; padding: 15px; position: relative; margin-bottom: 15px; box-shadow: inset 0 0 10px #00ff4111; overflow-y: auto; }
         .box-label { position: absolute; top: -10px; left: 15px; background: #030508; border: 1px solid #00ff41; padding: 0 8px; color: #00ff41; font-weight: bold; font-size: 9px; }
-        .big-metric { font-size: 2.5rem; font-weight: 900; text-align: center; text-shadow: 0 0 15px #00ff41; margin: 5px 0; }
+        .big-val { font-size: 2.5rem; font-weight: 900; text-align: center; text-shadow: 0 0 15px #00ff41; margin: 5px 0; }
         .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #002105; padding: 6px 0; }
         .stat-label { color: #008f11; }
-        .data-card { border: 1px solid #004111; background: #0a0f18; padding: 10px; margin-bottom: 5px; }
-        .vignette { border-left: 3px solid #00ff41; padding-left: 15px; margin-bottom: 20px; }
-        .vignette-title { font-weight: bold; color: #00ff41; margin-bottom: 5px; border-bottom: 1px solid #004111; padding-bottom: 3px; }
-        .vignette-body { color: #a0a0a0; text-transform: none; line-height: 1.4; font-size: 11px; }
-        .trend-up { color: #ff3131; } .trend-down { color: #39d353; }
-        .pulse { animation: pulse 2s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+        .cat-head { color: #000; background: #00ff41; padding: 2px 8px; font-weight: bold; font-size: 9px; margin-top: 15px; margin-bottom: 10px; display: inline-block; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #00ff41; }
         """
 
         template = jinja2.Template("""
         <html>
-        <head><style>{{ css }}</style><title>RADAR UNIFIED COMMAND</title></head>
+        <head><style>{{ css }}</style><title>RADAR SQLITE CONSOLE</title></head>
         <body>
             <div class="header">
-                <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // UNIFIED INTELLIGENCE</div>
+                <div class="header-title">RADAR // SQLITE TACTICAL CONSOLE</div>
                 <div style="text-align: right; font-weight: bold;">SECTOR: TIOGA PA | {{ now }} | v{{ version }}</div>
             </div>
             
-            <div class="unified-grid">
-                <!-- LEFT: TACTICAL STATUS -->
+            <div class="grid">
                 <div class="col">
-                    <div class="box">
-                        <div class="box-label">ATMOSPHERICS</div>
-                        <div class="big-metric">{{ tel.temp_f }}°F</div>
-                    </div>
-                    <div class="box">
-                        <div class="box-label">SECURITY INTEGRITY</div>
-                        <div class="big-metric" style="color: {% if score > 80 %}#00ff41{% elif score > 50 %}#ffff00{% else %}#ff3131{% endif %};">{{ score }}%</div>
-                        <div class="stat-row"><span class="stat-label">SSH FAILURES</span><span>{{ tel.ssh_failure_count }}</span></div>
-                    </div>
+                    <div class="box"><div class="box-label">ATMOSPHERICS</div><div class="big-val">{{ tel.temp_f }}°F</div></div>
+                    <div class="box"><div class="box-label">AIRSPACE DENSITY</div><div class="big-val">{{ tel.aircraft_count }}</div></div>
                     <div class="box">
                         <div class="box-label">HYDROLOGY</div>
-                        {% for r in rivers %}
-                        <div class="stat-row"><span class="stat-label">{{ r.name[:20] }}</span><span>{{ r.val }} {{ r.unit }} <span style="color:#ffff00; font-size: 8px;">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span></span></div>
-                        {% endfor %}
-                    </div>
-                    <div class="box" style="border-color: #ff3131;">
-                        <div class="box-label" style="color:#ff3131; border-color:#ff3131;">CRITICAL THREATS</div>
-                        {% for a in alerts[:6] %}<div style="color:#ff3131; margin-bottom:5px; border-bottom:1px solid #ff313122; padding-bottom:3px;">! {{ a.message }}</div>{% endfor %}
+                        {% for r in rivers %}<div class="stat-row"><span class="stat-label">{{ r.station_name[:20] }}</span><span>{{ r.value }} {{ r.unit }}</span></div>{% endfor %}
                     </div>
                 </div>
 
-                <!-- CENTER: THE CORE VIEWPORT -->
                 <div class="col">
-                    <div class="box">
-                        <div class="box-label">STRATEGIC DATA WALL // RECENT RESEARCH EXTRACTS</div>
+                    <div class="box" style="min-height: 500px;">
+                        <div class="box-label">PRE-DEFINED STATISTICAL DATA WALL</div>
+                        {% for cat, items in stats.items() %}
+                        <div class="cat-head">// {{ cat }}</div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                            {% for cat, items in stats.items() %}
-                            <div style="grid-column: span 2; color: #000; background: #00ff41; padding: 2px 8px; font-weight: bold; font-size: 9px; margin-top: 5px;">{{ cat }}</div>
                             {% for s in items %}
-                            <div class="data-card">
-                                <div style="font-size: 8px; color: #008f11;">{{ s.label }}</div>
-                                <div style="font-size: 1.1rem; font-weight: bold;">
-                                    {{ s.val }} {{ s.unit }}
-                                    {% if s.delta != 0 %}
-                                    <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 9px;">({% if s.delta > 0 %}+{% endif %}{{ "%.2f"|format(s.delta) }})</span>
-                                    {% endif %}
-                                </div>
+                            <div style="border: 1px solid #004111; padding: 8px; background: #0a0f18;">
+                                <div style="font-size: 8px; color: #008f11; margin-bottom: 3px;">{{ s.label }}</div>
+                                <div style="font-size: 1.1rem; font-weight: bold;">{{ s.value }} {{ s.unit }}</div>
                             </div>
                             {% endfor %}
-                            {% endfor %}
-                        </div>
-                    </div>
-
-                    <div class="box">
-                        <div class="box-label">TACTICAL INTELLIGENCE DISPATCHES // NARRATIVE SUMMARY</div>
-                        {% for v in vignettes %}
-                        <div class="vignette">
-                            <div class="vignette-title">>> {{ v.title }}</div>
-                            <div class="vignette-body">{{ v.body }}</div>
                         </div>
                         {% endfor %}
                     </div>
                 </div>
 
-                <!-- RIGHT: SIGNALS & SYSTEMS -->
                 <div class="col">
                     <div class="box">
-                        <div class="box-label">AIRSPACE DENSITY</div>
-                        <div class="big-metric">{{ tel.aircraft_count }}</div>
-                        <div style="text-align: center; color: #008f11;">ACTIVE ADS-B PINGS</div>
+                        <div class="box-label">SIGINT SPECTRUM</div>
+                        {% for f in rf[:12] %}<div class="stat-row"><span class="stat-label">{{ f.frequency_mhz }} MHz</span><span>{{ f.power_db }} dB</span></div>{% endfor %}
                     </div>
                     <div class="box">
-                        <div class="box-label">SIGINT SPECTRUM PEAKS</div>
-                        {% for f in rf[:15] %}
-                        <div class="stat-row"><span class="stat-label">{{ f.freq }} MHz</span><span>{{ f.db }} dB <span style="color:#ffff00; font-size: 8px;">({% if f.delta > 0 %}+{% endif %}{{ "%.2f"|format(f.delta) }})</span></span></div>
-                        {% endfor %}
+                        <div class="box-label">SYSTEM SOFTWARE</div>
+                        {% for s in sw %}<div class="stat-row"><span class="stat-label">{{ s.manager.upper() }}</span><span>{{ s.package_count }} PKGS</span></div>{% endfor %}
                     </div>
-                    <div class="box">
-                        <div class="box-label">SYSTEM SOFTWARE ARSENAL</div>
-                        {% for s in sw %}
-                        <div class="stat-row"><span class="stat-label">{{ s.manager.upper() }}</span><span>{{ s.package_count }} PKGS</span></div>
-                        {% endfor %}
+                    <div class="box" style="border-color:#ff3131;">
+                        <div class="box-label" style="color:#ff3131;border-color:#ff3131;">THREAT LOG</div>
+                        {% for a in alerts[:5] %}<div style="color:#ff3131; font-size:9px; margin-bottom:5px; border-bottom:1px solid #ff313122;">! {{ a.message }}</div>{% endfor %}
                     </div>
                 </div>
             </div>
@@ -936,23 +717,19 @@ def report(
         html = template.render(
             css=report_css,
             tel=curr_tel,
-            score=int(sec_score),
-            rivers=latest_rivers,
-            rf=processed_rf,
+            rivers=river_results,
+            rf=rf_peaks,
+            sw=sw_inv,
             stats=categorized_stats,
-            vignettes=vignettes,
             alerts=alerts,
-            sw=sw_all[:4],
             now=now_str,
-            version="0.35.0",
+            version="0.36.0",
         )
 
         fname = "tactical_intelligence_briefing.html"
         with open(fname, "w") as f:
             f.write(html)
-        console.print(
-            f"[bold green]Unified Command Briefing forged: {fname}[/bold green]"
-        )
+        console.print(f"[bold green]SQLite Console forged: {fname}[/bold green]")
         if open_browser:
             import subprocess
 
@@ -1036,87 +813,10 @@ def map():
 
 @app.command()
 def graph():
-    """Generate an offline 3D Knowledge Graph HTML file."""
-    import json
-
-    async def _graph():
-        console.print("[bold blue]Compiling 3D Knowledge Graph...[/bold blue]")
-        async with async_session() as session:
-            # Fetch all entities
-            estmt = select(Entity)
-            entities = (await session.execute(estmt)).scalars().all()
-
-            # Fetch all connections
-            cstmt = select(Connection)
-            connections = (await session.execute(cstmt)).scalars().all()
-
-        nodes = []
-        node_ids = set()
-
-        for e in entities:
-            color = (
-                "#ff7f0e"
-                if e.type.name == "COMPANY"
-                else "#2ca02c"
-                if e.type.name == "TECH"
-                else "#d62728"
-                if e.type.name == "PERSON"
-                else "#9467bd"
-            )
-            nodes.append(
-                {
-                    "id": str(e.id),
-                    "name": e.name,
-                    "val": 1,
-                    "color": color,
-                    "desc": e.details.get("description", ""),
-                }
-            )
-            node_ids.add(str(e.id))
-
-        links = []
-        for c in connections:
-            if str(c.source_uuid) in node_ids and str(c.target_uuid) in node_ids:
-                links.append(
-                    {
-                        "source": str(c.source_uuid),
-                        "target": str(c.target_uuid),
-                        "name": c.type.name,
-                        "desc": c.meta_data.get("description", ""),
-                    }
-                )
-
-        graph_data = {"nodes": nodes, "links": links}
-
-        # Write standalone HTML file using 3d-force-graph
-        html_content = f"""
-        <head>
-          <style> body {{ margin: 0; }} </style>
-          <script src="https://unpkg.com/3d-force-graph"></script>
-        </head>
-        <body>
-          <div id="3d-graph"></div>
-          <script>
-            const gData = {json.dumps(graph_data)};
-            const Graph = ForceGraph3D()
-              (document.getElementById('3d-graph'))
-                .graphData(gData)
-                .nodeLabel('name')
-                .nodeAutoColorBy('group')
-                .onNodeClick(node => window.alert(node.name + ": " + node.desc));
-          </script>
-        </body>
-        """
-
-        graph_file = "radar_graph.html"
-        with open(graph_file, "w") as f:
-            f.write(html_content)
-
-        console.print(
-            f"[bold green]3D Knowledge Graph generated at: {graph_file}[/bold green]"
-        )
-
-    asyncio.run(_graph())
+    """Graph visualization disabled in v0.36 pivot."""
+    console.print(
+        "[yellow]Knowledge Graph visualization is disabled in the current metrics-first architecture.[/yellow]"
+    )
 
 
 @app.command()
@@ -1179,96 +879,10 @@ def serve(port: int = typer.Option(8080, help="Port to run the sync server on.")
 
 @app.command()
 def brief(voice: bool = True):
-    """Strategic brief."""
-
-    async def do_brief():
-        from radar.core.ingest import IntelligenceAgent, NewsWire
-
-        intel = IntelligenceAgent()
-        news_wire = NewsWire()
-
-        try:
-            async with async_session() as session:
-                last_24h = datetime.now() - timedelta(hours=24)
-
-                # 1. Fetch Strategic Signals
-                sig_stmt = select(Signal).where(Signal.date >= last_24h).limit(20)
-                signals = (await session.execute(sig_stmt)).scalars().all()
-
-                # 2. Fetch Latest Tactical SITREPs (The last 2)
-                sitrep_stmt = (
-                    select(Signal)
-                    .where(Signal.title.contains("SITREP"))
-                    .order_by(desc(Signal.date))
-                    .limit(2)
-                )
-                sitreps = (await session.execute(sitrep_stmt)).scalars().all()
-
-                # 2.5 Fetch Latest Web Scrapes (Broadcastify, and Roam Routes)
-                dynamic_stmt = (
-                    select(Signal)
-                    .where(
-                        Signal.title.contains("Web Extraction")
-                        | Signal.title.contains("DeFlock")
-                        | Signal.title.contains("Route Intel")
-                    )
-                    .order_by(desc(Signal.date))
-                    .limit(
-                        15
-                    )  # Grab enough to get Flock, Broadcastify, and Roam routes
-                )
-                dynamic_scrapes = (await session.execute(dynamic_stmt)).scalars().all()
-
-                # 3. Fetch Recent Trends
-                trend_stmt = select(Trend).order_by(desc(Trend.id)).limit(10)
-                trends = (await session.execute(trend_stmt)).scalars().all()
-
-                # 4. Fetch Global Headlines
-                news_headlines = await news_wire.get_headlines()
-
-                tactical_context = "\n\n".join(
-                    [f"--- {s.title} ---\n{s.content[:1000]}" for s in sitreps]
-                    + [f"--- {s.title} ---\n{s.content[:800]}" for s in dynamic_scrapes]
-                )
-
-                context = {
-                    "signals": [
-                        s.title
-                        for s in signals
-                        if "SITREP" not in s.title and "Web Extraction" not in s.title
-                    ],
-                    "trends": [t.name for t in trends],
-                    "tactical": tactical_context,
-                    "news": news_headlines,
-                }
-
-                with console.status(
-                    "[bold yellow]IVXXa is synthesizing the briefing...[/bold yellow]"
-                ):
-                    text = await intel.generate_briefing(context)
-
-                console.print(
-                    Panel(
-                        text,
-                        title="[bold green]Strategic Intelligence Briefing[/bold green]",
-                    )
-                )
-
-                if voice:
-                    import subprocess
-
-                    subprocess.run(
-                        [
-                            "/home/chuck/bin/python3",
-                            "/home/chuck/Scripts/generate_voice.py",
-                            "--temp",
-                            text,
-                        ]
-                    )
-        finally:
-            pass
-
-    asyncio.run(do_brief())
+    """Briefing engine disabled in v0.36 pivot."""
+    console.print(
+        "[yellow]Intelligence Briefing engine is disabled in the current metrics-first architecture.[/yellow]"
+    )
 
 
 @app.command()
