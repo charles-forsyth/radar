@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    DB_URL: str = "sqlite+aiosqlite:///radar.db"
+    DB_URL: str = "sqlite+aiosqlite:////home/chuck/Projects/radar/radar.db"
 
     # Paths to local binaries and scripts
     ATMOS_BIN: str = "/home/chuck/.local/bin/atmos"
