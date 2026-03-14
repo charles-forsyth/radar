@@ -30,10 +30,114 @@ class IntelligenceAgent:
         return [0.0] * 384
 
     def extract_stats(self, text: str) -> List[dict]:
-        """Heuristic-based numerical extraction from text."""
+        """High-fidelity tactical OSINT/SIGINT numerical extraction engine."""
+        import re
+
         stats = []
 
-        # Gas/Fuel Price specific patterns
+        # 1. SPECIALIZED SIGINT (Frequencies, Bandwidths, Power)
+        # Power levels in dBm (e.g., -95.4 dBm)
+        dbm_matches = re.findall(r"(-\d+\.?\d*)\s*dBm", text, re.IGNORECASE)
+        for val in dbm_matches:
+            try:
+                stats.append(
+                    {"label": "Noise Floor/RSSI", "value": float(val), "unit": "dBm"}
+                )
+            except ValueError:
+                continue
+
+        # Signal Bandwidths (e.g., 12.5 kHz, 20 MHz)
+        bw_matches = re.findall(
+            r"(\d+\.?\d*)\s*(kHz|MHz|GHz)\s*(?:bandwidth|BW|channel spacing)",
+            text,
+            re.IGNORECASE,
+        )
+        for val, unit in bw_matches:
+            try:
+                stats.append({"label": "Signal BW", "value": float(val), "unit": unit})
+            except ValueError:
+                continue
+
+        # Encryption Depth (e.g., 256-bit AES)
+        enc_matches = re.findall(
+            r"(\d+)-bit\s*(?:AES|DES|encryption|key)", text, re.IGNORECASE
+        )
+        for val in enc_matches:
+            try:
+                stats.append(
+                    {"label": "Encryption Depth", "value": float(val), "unit": "bit"}
+                )
+            except ValueError:
+                continue
+
+        # 2. TACTICAL OSINT (Troops, Casualties, Hardware)
+        tactical_patterns = [
+            (
+                r"(\d+,?\d*)\s*(?:troops|personnel|soldiers|combatants)",
+                "Troop Count",
+                "Units",
+            ),
+            (
+                r"(\d+,?\d*)\s*(?:casualties|killed|wounded|fatalities)",
+                "Casualty Count",
+                "Units",
+            ),
+            (
+                r"(\d+,?\d*)\s*(?:drones|UAVs|quadcopters|fixed-wing)",
+                "Drone Density",
+                "Units",
+            ),
+            (
+                r"(\d+,?\d*)\s*(?:cameras|LPRs|ALPRs|surveillance nodes)",
+                "Sensor Density",
+                "Units",
+            ),
+            (
+                r"(\d+,?\d*)\s*(?:arrests|detained|apprehensions)",
+                "Enforcement Count",
+                "Units",
+            ),
+            (
+                r"(\d+\.?\d*)\s*(?:mi|km|miles|kilometers)\s*(?:radius|distance|range)",
+                "Tactical Range",
+                "Dist",
+            ),
+        ]
+        for pattern, label, unit in tactical_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for val in matches:
+                try:
+                    stats.append(
+                        {
+                            "label": label,
+                            "value": float(val.replace(",", "")),
+                            "unit": unit,
+                        }
+                    )
+                except ValueError:
+                    continue
+
+        # 3. FINANCIAL OSINT (Scaled Currencies)
+        financial_patterns = [
+            (r"\$(\d+\.?\d*)\s*([MBK]|Million|Billion)", "Strategic Value"),
+        ]
+        for pattern, label in financial_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for val, scale in matches:
+                try:
+                    f_val = float(val)
+                    s = scale.upper()
+                    if s.startswith("B") or s == "BILLION":
+                        f_val *= 1_000_000_000
+                    elif s.startswith("M") or s == "MILLION":
+                        f_val *= 1_000_000
+                    elif s.startswith("K"):
+                        f_val *= 1_000
+                    stats.append({"label": label, "value": f_val, "unit": "USD"})
+                except ValueError:
+                    continue
+
+        # 4. Standard Heuristics (Gas, Percentages, Units)
         gas_prices = re.findall(
             r"(?:Gas|Fuel|Gasoline):\s*\$([0-9,]+\.?\d*)", text, re.IGNORECASE
         )
@@ -49,7 +153,6 @@ class IntelligenceAgent:
             except ValueError:
                 continue
 
-        # General Currency
         currency = re.findall(r"\$([0-9,]+\.?\d*)", text)
         for val in currency:
             try:
@@ -63,7 +166,6 @@ class IntelligenceAgent:
             except ValueError:
                 continue
 
-        # Percentages
         pcts = re.findall(r"(\d+\.?\d*)%", text)
         for val in pcts:
             try:
@@ -71,7 +173,6 @@ class IntelligenceAgent:
             except ValueError:
                 continue
 
-        # Units
         patterns = [
             (r"(\d+,?\d*)\s*(?:acres|acre)", "Land Area", "Acres"),
             (r"(\d+,?\d*)\s*(?:gallons|gal)", "Fuel Volume", "Gallons"),
@@ -554,9 +655,11 @@ class CISAFeed:
     async def get_latest_vulns(self) -> str:
         return "CISA: System nominal."
 
+
 class WebIngestAgent:
     def __init__(self, intel=None):
         self.intel = intel or IntelligenceAgent()
+
 
 class AudioIngestAgent:
     def __init__(self, intel=None):

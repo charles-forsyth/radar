@@ -459,8 +459,11 @@ async def save_ingest_to_db(signal, kg, intel: IntelligenceAgent):
 
             # Save extracted stats
             for s in extracted_stats:
+                # Categorize based on title keywords or label
                 category = "GENERAL"
                 t_lower = signal.title.lower()
+                l_lower = s["label"].lower()
+
                 if any(
                     k in t_lower
                     for k in [
@@ -477,8 +480,46 @@ async def save_ingest_to_db(signal, kg, intel: IntelligenceAgent):
                     k in t_lower for k in ["benchmark", "performance", "fps", "t/s"]
                 ):
                     category = "TECH_METRICS"
-                elif any(k in t_lower for k in ["capacity", "count", "stats"]):
-                    category = "LOGISTICS"
+                elif any(
+                    k in t_lower or k in l_lower
+                    for k in [
+                        "capacity",
+                        "count",
+                        "stats",
+                        "troops",
+                        "casualties",
+                        "density",
+                        "enforcement",
+                    ]
+                ):
+                    category = "LOGISTICS/OSINT"
+                elif any(
+                    k in t_lower or k in l_lower
+                    for k in [
+                        "sdr",
+                        "radio",
+                        "p25",
+                        "frequency",
+                        "bandwidth",
+                        "encryption",
+                        "noise floor",
+                        "rssi",
+                        "sigint",
+                    ]
+                ):
+                    category = "SIGINT/COMSEC"
+                elif any(
+                    k in t_lower
+                    for k in [
+                        "phishing",
+                        "malware",
+                        "vuln",
+                        "cve",
+                        "zero-day",
+                        "exploit",
+                    ]
+                ):
+                    category = "CYBER_INTEL"
 
                 session.add(
                     Statistic(
