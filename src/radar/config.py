@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    DB_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/radar"
+    DB_URL: str = "sqlite+aiosqlite:///radar.db"
 
     # Cloud SQL IAM Auth Settings (Deprecated in local-only mode)
     INSTANCE_CONNECTION_NAME: str | None = None

@@ -1,10 +1,30 @@
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, text
 from radar.db.engine import engine
-
-# Import all models so metadata knows about them
-
+from radar.db.models import (
+    Signal,
+    TacticalAlert,
+    Telemetry,
+    RiverLevel,
+    RFPeak,
+    SoftwareInventory,
+    Statistic,
+    ChatSession,
+    ChatMessage
+)
 
 async def init_db():
+    from radar.config import settings
+    import os
+    
+    # Extract absolute path for verbose feedback
+    db_path = settings.DB_URL.replace("sqlite+aiosqlite:///", "")
+    abs_path = os.path.abspath(db_path)
+    
+    print(f"\n[VERBOSE] TARGETING DATABASE: {abs_path}")
+    
     async with engine.begin() as conn:
-        # Create all tables in SQLite
+        print("[VERBOSE] EXECUTING TABLE SCHEMA CREATION...")
         await conn.run_sync(SQLModel.metadata.create_all)
+        
+    print("[VERBOSE] SCHEMA VERIFICATION COMPLETE.")
+    print("[VERBOSE] TABLES INITIALIZED: signal, telemetry, riverlevel, rfpeak, softwareinventory, statistic, chatsession, chatmessage\n")
