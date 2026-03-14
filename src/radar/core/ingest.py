@@ -30,13 +30,37 @@ class IntelligenceAgent:
         return [0.0] * 384
 
     def extract_stats(self, text: str) -> List[dict]:
-        """High-fidelity tactical OSINT/SIGINT numerical extraction engine with context preservation."""
+        """High-fidelity tactical OSINT/SIGINT numerical extraction engine with subject identification."""
         import re
 
         stats = []
 
+        def get_subject(match_str, full_text):
+            """Heuristic to find the subject/noun phrase before a number."""
+            idx = full_text.find(match_str)
+            if idx == -1:
+                return None
+            pre = full_text[max(0, idx - 80) : idx].replace("\n", " ").strip()
+            parts = re.split(r"[,.;:]", pre)
+            chunk = parts[-1].strip()
+            chunk = re.sub(
+                r"^(the|a|an|of|to|for|is|are|was|were|has|been|which|that|this|these)\s+",
+                "",
+                chunk,
+                flags=re.IGNORECASE,
+            )
+            chunk = re.sub(
+                r"\s+(rose|fell|dropped|increased|decreased|at|of|to|is|with)$",
+                "",
+                chunk,
+                flags=re.IGNORECASE,
+            )
+            words = chunk.split()
+            if len(words) > 5:
+                chunk = " ".join(words[-5:])
+            return chunk.title() if len(chunk) > 3 else None
+
         def get_context(match_str, full_text, window=60):
-            """Helper to grab surrounding text for description."""
             idx = full_text.find(match_str)
             if idx == -1:
                 return ""
@@ -44,59 +68,53 @@ class IntelligenceAgent:
             end = min(len(full_text), idx + len(match_str) + window)
             return full_text[start:end].replace("\n", " ").strip()
 
-        # 1. SPECIALIZED SIGINT (Frequencies, Bandwidths, Power)
-        # Power levels in dBm (e.g., -95.4 dBm)
+        # 1. SPECIALIZED SIGINT
         dbm_matches = re.findall(r"(-\d+\.?\d*)\s*dBm", text, re.IGNORECASE)
         for val in dbm_matches:
-            try:
-                stats.append(
-                    {
-                        "label": "Noise Floor/RSSI",
-                        "value": float(val),
-                        "unit": "dBm",
-                        "description": get_context(f"{val} dBm", text),
-                    }
-                )
-            except ValueError:
-                continue
+            m_str = f"{val} dBm"
+            subject = get_subject(m_str, text)
+            stats.append(
+                {
+                    "label": subject if subject else "Noise Floor/RSSI",
+                    "value": float(val),
+                    "unit": "dBm",
+                    "description": get_context(m_str, text),
+                }
+            )
 
-        # Signal Bandwidths (e.g., 12.5 kHz, 20 MHz)
         bw_matches = re.findall(
             r"(\d+\.?\d*)\s*(kHz|MHz|GHz)\s*(?:bandwidth|BW|channel spacing)",
             text,
             re.IGNORECASE,
         )
         for val, unit in bw_matches:
-            try:
-                stats.append(
-                    {
-                        "label": "Signal BW",
-                        "value": float(val),
-                        "unit": unit,
-                        "description": get_context(f"{val} {unit}", text),
-                    }
-                )
-            except ValueError:
-                continue
+            m_str = f"{val} {unit}"
+            subject = get_subject(m_str, text)
+            stats.append(
+                {
+                    "label": subject if subject else "Signal BW",
+                    "value": float(val),
+                    "unit": unit,
+                    "description": get_context(val, text),
+                }
+            )
 
-        # Encryption Depth (e.g., 256-bit AES)
         enc_matches = re.findall(
             r"(\d+)-bit\s*(?:AES|DES|encryption|key)", text, re.IGNORECASE
         )
         for val in enc_matches:
-            try:
-                stats.append(
-                    {
-                        "label": "Encryption Depth",
-                        "value": float(val),
-                        "unit": "bit",
-                        "description": get_context(f"{val}-bit", text),
-                    }
-                )
-            except ValueError:
-                continue
+            m_str = f"{val}-bit"
+            subject = get_subject(m_str, text)
+            stats.append(
+                {
+                    "label": subject if subject else "Encryption Depth",
+                    "value": float(val),
+                    "unit": "bit",
+                    "description": get_context(m_str, text),
+                }
+            )
 
-        # 2. TACTICAL OSINT (Troops, Casualties, Hardware)
+        # 2. TACTICAL OSINT
         tactical_patterns = [
             (
                 r"(\d+,?\d*)\s*(?:troops|personnel|soldiers|combatants)",
@@ -129,14 +147,15 @@ class IntelligenceAgent:
                 "Dist",
             ),
         ]
-        for pattern, label, unit in tactical_patterns:
+        for pattern, default_label, unit in tactical_patterns:
             matches = re.finditer(pattern, text, re.IGNORECASE)
             for m in matches:
                 val = m.group(1)
+                subject = get_subject(m.group(0), text)
                 try:
                     stats.append(
                         {
-                            "label": label,
+                            "label": subject if subject else default_label,
                             "value": float(val.replace(",", "")),
                             "unit": unit,
                             "description": get_context(m.group(0), text),
@@ -145,14 +164,15 @@ class IntelligenceAgent:
                 except ValueError:
                     continue
 
-        # 3. FINANCIAL OSINT (Scaled Currencies)
+        # 3. FINANCIAL OSINT
         financial_patterns = [
             (r"\$(\d+\.?\d*)\s*([MBK]|Million|Billion)", "Strategic Value"),
         ]
-        for pattern, label in financial_patterns:
+        for pattern, default_label in financial_patterns:
             matches = re.finditer(pattern, text, re.IGNORECASE)
             for m in matches:
                 val, scale = m.group(1), m.group(2)
+                subject = get_subject(m.group(0), text)
                 try:
                     f_val = float(val)
                     s = scale.upper()
@@ -164,7 +184,7 @@ class IntelligenceAgent:
                         f_val *= 1_000
                     stats.append(
                         {
-                            "label": label,
+                            "label": subject if subject else default_label,
                             "value": f_val,
                             "unit": "USD",
                             "description": get_context(m.group(0), text),
@@ -173,7 +193,7 @@ class IntelligenceAgent:
                 except ValueError:
                     continue
 
-        # 4. Standard Heuristics (Gas, Percentages, Units)
+        # 4. Standard Heuristics
         gas_prices = re.finditer(
             r"(?:Gas|Fuel|Gasoline):\s*\$([0-9,]+\.?\d*)", text, re.IGNORECASE
         )
@@ -194,12 +214,13 @@ class IntelligenceAgent:
         currency = re.finditer(r"\$([0-9,]+\.?\d*)", text)
         for m in currency:
             val = m.group(1)
+            subject = get_subject(m.group(0), text)
             try:
                 f_val = float(val.replace(",", ""))
                 if not any(s["value"] == f_val and s["unit"] == "USD" for s in stats):
                     stats.append(
                         {
-                            "label": "Price/Value",
+                            "label": subject if subject else "Price/Value",
                             "value": f_val,
                             "unit": "USD",
                             "description": get_context(m.group(0), text),
@@ -211,10 +232,11 @@ class IntelligenceAgent:
         pcts = re.finditer(r"(\d+\.?\d*)%", text)
         for m in pcts:
             val = m.group(1)
+            subject = get_subject(m.group(0), text)
             try:
                 stats.append(
                     {
-                        "label": "Percentage",
+                        "label": subject if subject else "Percentage",
                         "value": float(val),
                         "unit": "%",
                         "description": get_context(m.group(0), text),
@@ -229,14 +251,15 @@ class IntelligenceAgent:
             (r"(\d+,?\d*)\s*(?:t/s|tokens/sec)", "Performance", "t/s"),
             (r"(\d+,?\d*)\s*(?:beds|bed count)", "Medical Capacity", "Beds"),
         ]
-        for pattern, label, unit in patterns:
+        for pattern, default_label, unit in patterns:
             matches = re.finditer(pattern, text, re.IGNORECASE)
             for m in matches:
                 val = m.group(1)
+                subject = get_subject(m.group(0), text)
                 try:
                     stats.append(
                         {
-                            "label": label,
+                            "label": subject if subject else default_label,
                             "value": float(val.replace(",", "")),
                             "unit": unit,
                             "description": get_context(m.group(0), text),
