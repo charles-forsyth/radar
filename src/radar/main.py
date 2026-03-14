@@ -922,7 +922,7 @@ def report(
             stats=final_stats,
             alerts=alerts,
             now=now_str,
-            version="0.45.0",
+            version="0.45.1",
             map_data=map_b64,
         )
 

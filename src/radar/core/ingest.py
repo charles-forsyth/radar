@@ -521,9 +521,24 @@ class TacticalAgent:
         rf = results[4]
         netsec = results[5]
 
+        adsb_lines = ["### AIRSPACE SURVEILLANCE (ADS-B)"]
+        aircraft_list = adsb_raw.get("aircraft", [])
+        for ac in aircraft_list:
+            lat, lon = ac.get("lat"), ac.get("lon")
+            if lat and lon:
+                flight = ac.get("flight", "UNK").strip()
+                alt = ac.get("alt_baro", ac.get("alt_geom", 0))
+                adsb_lines.append(
+                    f"- Flight {flight} at {alt}ft (Lat: {lat}, Lon: {lon})"
+                )
+        if len(adsb_lines) == 1:
+            adsb_lines.append("- No aircraft in detection range.")
+
+        adsb_text = "\n".join(adsb_lines)
+
         raw_text = (
             f"Title: Master Tactical SITREP - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"{weather['text']}\n{netsec['text']}\n{rivers['text']}\n{sw['text']}\n{rf['text']}"
+            f"{weather['text']}\n{netsec['text']}\n{adsb_text}\n{rivers['text']}\n{sw['text']}\n{rf['text']}"
         )
 
         return TacticalSnapshot(
