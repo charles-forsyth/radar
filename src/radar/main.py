@@ -615,20 +615,64 @@ def report(
         True, "--open", help="Open the report in browser."
     ),
 ):
-    """Generate a high-fidelity 'Total Intelligence Wall' for all extracted statistics."""
+    """Generate the v0.45.0 Unified Intelligence HUD (Map + Data Wall)."""
     import jinja2
     from sqlalchemy import select, desc
     import asyncio
+    import folium
+    import re
+    import base64
 
-    async def _report():
-        console.print("[bold blue]Forging v0.44 Contextual Data Wall...[/bold blue]")
+    async def _generate_map_base64():
+        tioga_coords = settings.HOME_COORDS
+        m = folium.Map(location=tioga_coords, zoom_start=8, tiles="CartoDB dark_matter")
+
+        folium.Circle(
+            radius=settings.SECTOR_RADIUS_MILES * 1609.34,
+            location=tioga_coords,
+            popup=f"{settings.SECTOR_RADIUS_MILES}-Mile Sector",
+            color="#00ff41",
+            fill=True,
+            fill_color="#00ff41",
+            fill_opacity=0.05,
+        ).add_to(m)
+
+        folium.Marker(
+            tioga_coords,
+            popup="BASE",
+            icon=folium.Icon(color="green", icon="home"),
+        ).add_to(m)
 
         async with async_session() as session:
-            # 1. Telemetry
+            stmt = select(Signal).where(Signal.title.contains("SITREP")).limit(100)
+            sitreps = (await session.execute(stmt)).scalars().all()
+            for s in sitreps:
+                matches = re.finditer(
+                    r"Lat:\s*([\-\d\.]+),\s*Lon:\s*([\-\d\.]+)", s.content
+                )
+                for match in matches:
+                    lat, lon = float(match.group(1)), float(match.group(2))
+                    folium.CircleMarker(
+                        [lat, lon],
+                        radius=4,
+                        color="#ff3131",
+                        fill=True,
+                        popup="AIRCRAFT PING",
+                    ).add_to(m)
+
+        map_html = m._repr_html_()
+        return base64.b64encode(map_html.encode()).decode()
+
+    async def _report():
+        console.print(
+            "[bold blue]Forging v0.45 Unified Intelligence HUD...[/bold blue]"
+        )
+        map_b64 = await _generate_map_base64()
+
+        async with async_session() as session:
             tel_stmt = select(Telemetry).order_by(desc(Telemetry.timestamp)).limit(1)  # type: ignore
             curr_tel = (await session.execute(tel_stmt)).scalar_one_or_none()
 
-            # 2. Rivers
             river_stmt = (
                 select(RiverLevel).order_by(desc(RiverLevel.timestamp)).limit(100)
             )  # type: ignore
@@ -651,7 +695,6 @@ def report(
                     }
                 )
 
-            # 3. RF Peaks
             rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(40)  # type: ignore
             rf_results = (await session.execute(rf_stmt)).scalars().all()
             rf_map = {}
@@ -673,7 +716,6 @@ def report(
                 )
             processed_rf.sort(key=lambda x: x["db"], reverse=True)
 
-            # 4. Software
             sw_stmt = (
                 select(SoftwareInventory)
                 .order_by(desc(SoftwareInventory.timestamp))
@@ -697,19 +739,16 @@ def report(
                     }
                 )
 
-            # 5. ALL Statistics
             stats_stmt = (
                 select(Statistic).order_by(desc(Statistic.timestamp)).limit(2000)
             )  # type: ignore
             all_stats = (await session.execute(stats_stmt)).scalars().all()
 
-            # 6. Alerts
             alert_stmt = (
                 select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(15)
             )  # type: ignore
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
-        # Categorization
         stats_map = {}
         for s in all_stats:
             key = (s.category, s.label)
@@ -735,63 +774,90 @@ def report(
 
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=JetBrains+Mono:wght@400;700&display=swap');
-        body { background-color: #020406; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; overflow-y: auto; }
-        .wall-grid { display: grid; grid-template-columns: 320px 1fr 320px; gap: 10px; }
-        .header { grid-column: 1 / span 3; border: 1px solid #00ff41; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; background: #00ff4111; margin-bottom: 10px; }
-        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.3rem; font-weight: 900; text-shadow: 0 0 10px #00ff41; }
-        .box { border: 1px solid #00ff41; background: #080c12; padding: 12px; position: relative; margin-bottom: 10px; box-shadow: inset 0 0 8px #00ff4111; overflow-y: auto; max-height: 800px; }
-        .box-label { position: absolute; top: -8px; left: 12px; background: #020406; border: 1px solid #00ff41; padding: 0 6px; color: #00ff41; font-weight: bold; font-size: 8px; z-index: 10; }
-        .metric-big { font-size: 2.2rem; font-weight: 900; text-align: center; margin: 10px 0; }
-        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #002105; padding: 4px 0; }
-        .stat-label { color: #008f11; }
-        .cat-title { color: #000; background: #00ff41; padding: 2px 6px; font-weight: bold; font-size: 8px; margin-top: 15px; margin-bottom: 8px; display: inline-block; box-shadow: 0 0 5px #00ff41; }
-        .data-card { border: 1px solid #004111; background: #05080c; padding: 10px; margin-bottom: 8px; }
-        .stat-desc { text-transform: none; font-size: 10px; color: #8b949e; line-height: 1.4; margin-top: 8px; border-top: 1px solid #002105; padding-top: 6px; font-style: italic; }
-        .trend-up { color: #ff3131; } .trend-down { color: #39d353; }
+        :root { --neon-green: #00ff41; --deep-bg: #020406; --glass-bg: rgba(8, 12, 18, 0.85); --alert-red: #ff3131; }
+        body { background: var(--deep-bg); color: var(--neon-green); font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 10px; overflow-x: hidden; }
+        .hud-grid { display: grid; grid-template-columns: 320px 1fr 320px; gap: 12px; height: calc(100vh - 80px); }
+        .header { border: 1px solid var(--neon-green); padding: 12px 25px; display: flex; justify-content: space-between; align-items: center; background: rgba(0, 255, 65, 0.08); margin-bottom: 12px; border-radius: 4px; }
+        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.4rem; font-weight: 900; text-shadow: 0 0 15px var(--neon-green); }
+        .box { border: 1px solid var(--neon-green); background: var(--glass-bg); padding: 15px; position: relative; margin-bottom: 12px; border-radius: 4px; box-shadow: inset 0 0 10px rgba(0, 255, 65, 0.1); overflow-y: auto; }
+        .box-label { position: absolute; top: -10px; left: 15px; background: var(--deep-bg); border: 1px solid var(--neon-green); padding: 2px 10px; color: var(--neon-green); font-weight: 900; font-size: 9px; }
+        .center-stack { display: flex; flex-direction: column; gap: 12px; height: 100%; }
+        .map-frame { border: 1px solid var(--neon-green); border-radius: 4px; height: 450px; width: 100%; position: relative; overflow: hidden; }
+        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0, 255, 65, 0.1); padding: 5px 0; }
+        .metric-big { font-size: 2.5rem; font-weight: 900; text-align: center; margin: 15px 0; font-family: 'Orbitron'; color: #fff; text-shadow: 0 0 10px var(--neon-green); }
+        .data-card { border: 1px solid rgba(0, 255, 65, 0.2); background: rgba(5, 8, 12, 0.6); padding: 10px; margin-bottom: 10px; border-radius: 4px; transition: all 0.3s; }
+        .data-card:hover { border-color: var(--neon-green); box-shadow: 0 0 15px rgba(0, 255, 65, 0.2); transform: translateY(-2px); }
+        .stat-desc { text-transform: none; font-size: 10px; color: #8b949e; line-height: 1.5; margin-top: 8px; border-top: 1px solid rgba(0, 255, 65, 0.1); padding-top: 8px; font-style: italic; }
+        .trend-up { color: var(--alert-red); } .trend-down { color: #39d353; }
+        .cat-tag { color: #000; background: var(--neon-green); padding: 2px 8px; font-weight: 900; font-size: 9px; margin: 15px 0 10px 0; display: inline-block; }
+        ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: var(--neon-green); }
         .pulse { animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
-        ::-webkit-scrollbar { width: 3px; }
-        ::-webkit-scrollbar-thumb { background: #00ff41; }
+        .scan-line { width: 100%; height: 2px; background: rgba(0, 255, 65, 0.3); position: absolute; top: 0; left: 0; animation: scan 4s linear infinite; z-index: 100; pointer-events: none; }
+        @keyframes scan { from { top: 0; } to { top: 100%; } }
         """
 
         template = jinja2.Template("""
+        <!DOCTYPE html>
         <html>
-        <head><style>{{ css }}</style><title>RADAR TOTAL INTEL WALL</title></head>
+        <head><style>{{ css }}</style><title>RADAR // UNIFIED COMMAND HUD</title></head>
         <body>
             <div class="header">
-                <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // CONTEXTUAL INTELLIGENCE WALL</div>
-                <div style="text-align: right; font-weight: bold;">SECTOR: TIOGA PA | {{ now }} | v{{ version }}</div>
+                <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // UNIFIED INTELLIGENCE HUD</div>
+                <div style="text-align: right; font-weight: 900;">
+                    SECTOR: TIOGA PA | {{ now }} | v{{ version }}
+                </div>
             </div>
             
-            <div class="wall-grid">
+            <div class="hud-grid">
+                <!-- LEFT COLUMN: ATMOSPHERICS & SECURITY -->
                 <div class="col">
-                    <div class="box"><div class="box-label">ATMOSPHERICS</div><div class="metric-big">{{ tel.temp_f }}°F</div></div>
                     <div class="box">
-                        <div class="box-label">LAN & SECURITY</div>
-                        <div class="stat-row"><span class="stat-label">ACTIVE NODES</span><span>{{ tel.lan_device_count }}</span></div>
-                        <div class="stat-row"><span class="stat-label">SSH FAILURES</span><span style="color:#ff3131">{{ tel.ssh_failure_count }}</span></div>
+                        <div class="box-label">ENVIRONMENTAL SENSORS</div>
+                        <div class="metric-big">{{ tel.temp_f if tel else '--' }}°F</div>
+                    </div>
+                    <div class="box">
+                        <div class="box-label">NETWORK TOPOLOGY</div>
+                        <div class="stat-row"><span>ACTIVE NODES</span><span>{{ tel.lan_device_count if tel else '0' }}</span></div>
+                        <div class="stat-row"><span>SSH THREATS</span><span style="color:var(--alert-red)">{{ tel.ssh_failure_count if tel else '0' }}</span></div>
+                        <div class="stat-row"><span>NET LATENCY</span><span>{{ tel.internet_latency_ms if tel else '--' }} MS</span></div>
                     </div>
                     <div class="box" style="height: 300px;">
                         <div class="box-label">HYDROLOGY Board</div>
-                        {% for r in rivers %}<div class="stat-row"><span class="stat-label">{{ r.name[:20] }}</span><span>{{ r.val }} {{ r.unit }} <span style="color:#ffff00">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span></span></div>{% endfor %}
+                        {% for r in rivers %}
+                        <div class="stat-row">
+                            <span style="color:#008f11">{{ r.name[:20] }}</span>
+                            <span>{{ r.val }} {{ r.unit }} <span style="color:#ffff00">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span></span>
+                        </div>
+                        {% endfor %}
                     </div>
-                    <div class="box" style="border-color: #ff3131;">
-                        <div class="box-label" style="color:#ff3131; border-color:#ff3131;">THREAT LOG</div>
-                        {% for a in alerts[:6] %}<div style="color:#ff3131; font-size:8px; margin-bottom:3px; border-bottom:1px solid #ff313122;">! {{ a.message }}</div>{% endfor %}
+                    <div class="box" style="border-color: var(--alert-red);">
+                        <div class="box-label" style="color:var(--alert-red); border-color:var(--alert-red);">ACTIVE THREAT LOG</div>
+                        {% for a in alerts[:6] %}
+                        <div style="color:var(--alert-red); font-size:9px; margin-bottom:5px; border-bottom:1px solid rgba(255,49,49,0.1); padding-bottom:3px;">
+                            >> {{ a.message }}
+                        </div>
+                        {% endfor %}
                     </div>
                 </div>
 
-                <div class="col">
-                    <div class="box" style="min-height: 800px;">
-                        <div class="box-label">STRATEGIC DATA WALL // CONTEXTUAL INTELLIGENCE</div>
+                <!-- CENTER COLUMN: TACTICAL MAP & STRATEGIC WALL -->
+                <div class="col center-stack">
+                    <div class="map-frame">
+                        <div class="box-label">TACTICAL SITUATION MAP (LIVE)</div>
+                        <div class="scan-line"></div>
+                        <iframe src="data:text/html;base64,{{ map_data }}" style="width:100%; height:100%; border:none;"></iframe>
+                    </div>
+                    <div class="box" style="flex-grow: 1;">
+                        <div class="box-label">STRATEGIC DATA WALL // TOTAL EXTRACTED OSINT/SIGINT</div>
                         {% for cat, items in stats.items() %}
-                        <div class="cat-title">// CATEGORY: {{ cat }}</div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <div class="cat-tag">// SECTOR: {{ cat }}</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                             {% for s in items %}
                             <div class="data-card">
                                 <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                                    <div style="font-size: 10px; color: #00ff41; font-weight: bold;">{{ s.label }}</div>
-                                    <div style="font-size: 0.9rem; font-weight: bold; text-align: right;">
+                                    <div style="font-size: 11px; color: var(--neon-green); font-weight: 900;">{{ s.label }}</div>
+                                    <div style="font-size: 1.2rem; font-weight: 900; text-align: right; color: #fff;">
                                         {{ s.val }} {{ s.unit }}
                                         {% if s.delta != 0 %}
                                         <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 10px;">
@@ -808,19 +874,37 @@ def report(
                     </div>
                 </div>
 
+                <!-- RIGHT COLUMN: SIGINT & SYSTEM -->
                 <div class="col">
-                    <div class="box"><div class="box-label">AIRSPACE DENSITY</div><div class="metric-big">{{ tel.aircraft_count }}</div></div>
+                    <div class="box">
+                        <div class="box-label">AIRSPACE DENSITY</div>
+                        <div class="metric-big">{{ tel.aircraft_count if tel else '0' }}</div>
+                    </div>
                     <div class="box" style="height: 400px;">
-                        <div class="box-label">SIGINT SPECTRUM PEAKS</div>
-                        {% for f in rf %}<div class="stat-row"><span class="stat-label">{{ f.freq }} MHZ</span><span>{{ f.db }} DB <span style="color:#ffff00">({% if f.delta > 0 %}+{% endif %}{{ "%.2f"|format(f.delta) }})</span></span></div>{% endfor %}
+                        <div class="box-label">SIGINT SPECTRUM ANALYSIS</div>
+                        {% for f in rf %}
+                        <div class="stat-row">
+                            <span style="color:#008f11">{{ f.freq }} MHZ</span>
+                            <span>{{ f.db }} DB <span style="color:#ffff00">({% if f.delta > 0 %}+{% endif %}{{ "%.2f"|format(f.delta) }})</span></span>
+                        </div>
+                        {% endfor %}
                     </div>
                     <div class="box">
-                        <div class="box-label">SYSTEM SOFTWARE</div>
-                        {% for s in sw %}<div class="stat-row"><span class="stat-label">{{ s.manager }}</span><span>{{ s.count }} PKGS <span style="color:#ffff00">({% if s.delta > 0 %}+{% endif %}{{ s.delta }})</span></span></div>{% endfor %}
+                        <div class="box-label">SOFTWARE ARSENAL</div>
+                        {% for s in sw %}
+                        <div class="stat-row">
+                            <span style="color:#008f11">{{ s.manager }}</span>
+                            <span>{{ s.count }} PKGS <span style="color:#ffff00">({% if s.delta > 0 %}+{% endif %}{{ s.delta }})</span></span>
+                        </div>
+                        {% endfor %}
                     </div>
                     <div class="box" style="border-color: #008f11; color: #008f11;">
-                        <div class="box-label" style="border-color: #008f11;">SYSTEM HEALTH</div>
-                        <div style="font-size: 8px;">CORE UPTIME: 312H 14M<br>INTEGRITY: 100% NOMINAL</div>
+                        <div class="box-label" style="border-color: #008f11;">SYSTEM CORE HEALTH</div>
+                        <div style="font-size: 9px; line-height:1.6;">
+                            CORE UPTIME: 312H 14M<br>
+                            DB STATE: SQLITE RELATIONAL<br>
+                            INTEGRITY: 100% NOMINAL
+                        </div>
                     </div>
                 </div>
             </div>
@@ -838,13 +922,15 @@ def report(
             stats=final_stats,
             alerts=alerts,
             now=now_str,
-            version="0.44.0",
+            version="0.45.0",
+            map_data=map_b64,
         )
+
         with open("tactical_intelligence_briefing.html", "w") as f:
             f.write(html)
 
         console.print(
-            "[bold green]Contextual Wall forged: tactical_intelligence_briefing.html[/bold green]"
+            "[bold green]Unified Intelligence HUD forged: tactical_intelligence_briefing.html[/bold green]"
         )
         if open_browser:
             import subprocess
