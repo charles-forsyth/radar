@@ -1,6 +1,6 @@
 [project]
 name = "radar"
-version = "0.35.0"
+version = "0.36.0"
 description = "Personal Industry Intelligence CLI"
 readme = "README.md"
 requires-python = ">=3.12"
