@@ -15,7 +15,7 @@ from radar.core.ingest import (
     TextIngestAgent,
 )
 from radar.core.models import KnowledgeGraphExtraction
-from radar.db.engine import async_session
+from radar.db.engine import async_session, engine
 from radar.db.init import init_db
 from radar.db.models import (
     Signal,
@@ -144,7 +144,7 @@ async def do_ask_logic(
                 break
             current_question = ""
     finally:
-        pass
+        await engine.dispose()
 
 
 @app.command()
@@ -432,7 +432,7 @@ def sync(
                 await run_ingest(sitrep_text, voice, shared_intel)
 
         finally:
-            pass
+            await engine.dispose()
 
     asyncio.run(do_sync())
 
@@ -549,6 +549,8 @@ async def run_ingest(
         except Exception as e:
             if "duplicate key value" not in str(e):
                 console.print(f"[red]Ingest failed:[/red] {e}")
+        finally:
+            await engine.dispose()
 
     await _ingest()
 
@@ -979,7 +981,7 @@ def report(
             stats=final_stats,
             alerts=alerts,
             now=now_str,
-            version="0.47.1",
+            version="0.47.2",
             map_data=map_b64,
         )
 
@@ -1031,6 +1033,7 @@ def report(
                 )
             except Exception:
                 pass
+        await engine.dispose()
 
     asyncio.run(_report())
 
@@ -1073,6 +1076,7 @@ def stats(
                     s.description or "N/A",
                 )
             console.print(table)
+        await engine.dispose()
 
     asyncio.run(_stats())
 
@@ -1124,6 +1128,7 @@ def map():
         map_file = "radar_map.html"
         m.save(map_file)
         console.print(f"[bold green]Map generated at: {map_file}[/bold green]")
+        await engine.dispose()
 
     asyncio.run(_map())
 
@@ -1209,6 +1214,7 @@ def init():
         )
         await init_db()
         console.print("[bold green]RADAR SYSTEM READY - DATABASE ONLINE[/bold green]")
+        await engine.dispose()
 
     asyncio.run(_init())
 
