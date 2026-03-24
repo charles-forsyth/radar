@@ -615,12 +615,13 @@ def ingest(
 @app.command()
 @app.command()
 @app.command()
+@app.command()
 def report(
     open_browser: bool = typer.Option(
         True, "--open/--no-open", help="Open the report in browser."
     ),
 ):
-    """Generate the v0.46.0 Unified Intelligence HUD (Map + Data Wall)."""
+    """Generate the v0.48.0 Focused Intelligence HUD (Smaller Map, Expanded Sides)."""
     import jinja2
     from sqlalchemy import select, desc
     import asyncio
@@ -704,7 +705,7 @@ def report(
 
     async def _report():
         console.print(
-            "[bold blue]Forging v0.47.1 Unified Intelligence HUD...[/bold blue]"
+            "[bold blue]Forging v0.48.0 Focused Intelligence HUD...[/bold blue]"
         )
         map_b64 = await _generate_map_base64()
 
@@ -778,58 +779,25 @@ def report(
                     }
                 )
 
-            stats_stmt = (
-                select(Statistic).order_by(desc(Statistic.timestamp)).limit(2000)
-            )
-            all_stats = (await session.execute(stats_stmt)).scalars().all()
-
             alert_stmt = (
                 select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(15)
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
-        stats_map = {}
-        for s in all_stats:
-            key = (s.category, s.label)
-            if key not in stats_map:
-                stats_map[key] = []
-            if len(stats_map[key]) < 2:
-                stats_map[key].append(s)
-
-        final_stats = {}
-        for (cat, label), items in stats_map.items():
-            c, p = items[0], (items[1] if len(items) > 1 else None)
-            if cat not in final_stats:
-                final_stats[cat] = []
-            final_stats[cat].append(
-                {
-                    "label": label,
-                    "val": c.value,
-                    "unit": c.unit or "",
-                    "delta": c.value - p.value if p else 0,
-                    "description": c.description,
-                }
-            )
-
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=JetBrains+Mono:wght@400;700&display=swap');
         :root { --neon-green: #00ff41; --deep-bg: #020406; --glass-bg: rgba(8, 12, 18, 0.9); --alert-red: #ff3131; }
         body { background: var(--deep-bg); color: var(--neon-green); font-family: 'JetBrains Mono', monospace; margin: 0; padding: 20px; text-transform: uppercase; font-size: 10px; overflow-x: hidden; }
-        .hud-grid { display: grid; grid-template-columns: 320px 1fr 320px; gap: 15px; height: calc(100vh - 100px); margin-top: 10px; }
+        .hud-grid { display: grid; grid-template-columns: 400px 1fr 400px; gap: 15px; height: calc(100vh - 100px); margin-top: 10px; }
         .header { border: 1px solid var(--neon-green); padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; background: rgba(0, 255, 65, 0.08); margin-bottom: 20px; border-radius: 4px; }
         .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.5rem; font-weight: 900; text-shadow: 0 0 15px var(--neon-green); }
         .box { border: 1px solid var(--neon-green); background: var(--glass-bg); padding: 0; position: relative; margin-bottom: 20px; border-radius: 4px; box-shadow: inset 0 0 10px rgba(0, 255, 65, 0.1); overflow: visible; display: flex; flex-direction: column; }
         .box-content { padding: 22px 15px 15px 15px; overflow-y: auto; flex-grow: 1; }
         .box-label { position: absolute; top: -11px; left: 15px; background: var(--deep-bg); border: 1px solid var(--neon-green); padding: 2px 12px; color: var(--neon-green); font-weight: 900; font-size: 10px; z-index: 200; line-height: 1.2; box-shadow: 0 0 10px var(--deep-bg); }
         .center-stack { display: flex; flex-direction: column; gap: 15px; height: 100%; }
-        .map-frame { border: 1px solid var(--neon-green); border-radius: 4px; height: 450px; width: 100%; position: relative; overflow: hidden; background: #000; }
-        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0, 255, 65, 0.1); padding: 6px 0; }
+        .map-frame { border: 1px solid var(--neon-green); border-radius: 4px; height: 350px; width: 100%; position: relative; overflow: hidden; background: #000; }
+        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0, 255, 65, 0.1); padding: 8px 0; }
         .metric-big { font-size: 2.8rem; font-weight: 900; text-align: center; margin: 15px 0; font-family: 'Orbitron'; color: #fff; text-shadow: 0 0 10px var(--neon-green); }
-        .data-card { border: 1px solid rgba(0, 255, 65, 0.2); background: rgba(5, 8, 12, 0.6); padding: 12px; margin-bottom: 12px; border-radius: 4px; transition: all 0.3s; }
-        .data-card:hover { border-color: var(--neon-green); box-shadow: 0 0 15px rgba(0, 255, 65, 0.2); transform: translateY(-2px); }
-        .stat-desc { text-transform: none; font-size: 10px; color: #8b949e; line-height: 1.6; margin-top: 10px; border-top: 1px solid rgba(0, 255, 65, 0.1); padding-top: 10px; font-style: italic; }
-        .trend-up { color: var(--alert-red); } .trend-down { color: #39d353; }
-        .cat-tag { color: #000; background: var(--neon-green); padding: 3px 10px; font-weight: 900; font-size: 10px; margin: 20px 0 12px 0; display: inline-block; }
         ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-thumb { background: var(--neon-green); }
         .pulse { animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
@@ -840,10 +808,10 @@ def report(
         template = jinja2.Template("""
         <!DOCTYPE html>
         <html>
-        <head><style>{{ css }}</style><title>RADAR // UNIFIED COMMAND HUD</title></head>
+        <head><style>{{ css }}</style><title>RADAR // FOCUSED COMMAND HUD</title></head>
         <body>
             <div class="header">
-                <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // UNIFIED INTELLIGENCE HUD</div>
+                <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // FOCUSED INTELLIGENCE HUD</div>
                 <div style="text-align: right; font-weight: 900;">
                     SECTOR: TIOGA PA | {{ now }} | v{{ version }}
                 </div>
@@ -864,12 +832,12 @@ def report(
                             <div class="stat-row"><span>NET LATENCY</span><span>{{ tel.internet_latency_ms if tel else '--' }} MS</span></div>
                         </div>
                     </div>
-                    <div class="box" style="height: 300px;">
+                    <div class="box" style="flex-grow: 1;">
                         <div class="box-label">HYDROLOGY Board</div>
                         <div class="box-content">
                             {% for r in rivers %}
                             <div class="stat-row">
-                                <span style="color:#008f11">{{ r.name[:20] }}</span>
+                                <span style="color:#008f11">{{ r.name[:25] }}</span>
                                 <span>{{ r.val }} {{ r.unit }} <span style="color:#ffff00">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span></span>
                             </div>
                             {% endfor %}
@@ -878,7 +846,7 @@ def report(
                     <div class="box" style="border-color: var(--alert-red);">
                         <div class="box-label" style="color:var(--alert-red); border-color:var(--alert-red);">ACTIVE THREAT LOG</div>
                         <div class="box-content">
-                            {% for a in alerts[:6] %}
+                            {% for a in alerts[:12] %}
                             <div style="color:var(--alert-red); font-size:10px; margin-bottom:6px; border-bottom:1px solid rgba(255,49,49,0.1); padding-bottom:4px;">
                                 >> {{ a.message }}
                             </div>
@@ -894,32 +862,6 @@ def report(
                         <div class="scan-line"></div>
                         <iframe src="data:text/html;base64,{{ map_data }}" style="width:100%; height:100%; border:none;"></iframe>
                     </div>
-                    <div class="box" style="flex-grow: 1;">
-                        <div class="box-label">STRATEGIC ADVISORY WALL // CURATED INTEL</div>
-                        <div class="box-content">
-                            {% for cat, items in stats.items() %}
-                            <div class="cat-tag">// SECTOR: {{ cat }}</div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                                {% for s in items %}
-                                <div class="data-card">
-                                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                                        <div style="font-size: 11px; color: var(--neon-green); font-weight: 900;">{{ s.label }}</div>
-                                        <div style="font-size: 1.2rem; font-weight: 900; text-align: right; color: #fff;">
-                                            {{ s.val }} {{ s.unit }}
-                                            {% if s.delta != 0 %}
-                                            <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 10px;">
-                                                ({% if s.delta > 0 %}+{% endif %}{{ "%.2f"|format(s.delta) }})
-                                            </span>
-                                            {% endif %}
-                                        </div>
-                                    </div>
-                                    {% if s.description %}<div class="stat-desc">{{ s.description }}</div>{% endif %}
-                                </div>
-                                {% endfor %}
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
                 </div>
 
                 <!-- RIGHT COLUMN -->
@@ -933,7 +875,7 @@ def report(
                             </div>
                         </div>
                     </div>
-                    <div class="box" style="height: 400px;">
+                    <div class="box" style="flex-grow: 1;">
                         <div class="box-label">SIGINT SPECTRUM ANALYSIS</div>
                         <div class="box-content">
                             {% for f in rf %}
@@ -958,7 +900,7 @@ def report(
                     <div class="box" style="border-color: #008f11; color: #008f11;">
                         <div class="box-label" style="border-color: #008f11;">SYSTEM CORE HEALTH</div>
                         <div class="box-content">
-                            <div style="font-size: 10px; line-height:1.8;">
+                            <div style="font-size: 10px; line-height:2.0;">
                                 CORE UPTIME: 312H 14M<br>
                                 DB STATE: SQLITE RELATIONAL<br>
                                 INTEGRITY: 100% NOMINAL
@@ -978,24 +920,22 @@ def report(
             rivers=latest_rivers,
             rf=processed_rf,
             sw=latest_sw,
-            stats=final_stats,
             alerts=alerts,
             now=now_str,
-            version="0.47.2",
+            version="0.48.0",
             map_data=map_b64,
         )
 
         with open("tactical_intelligence_briefing.html", "w") as f:
             f.write(html)
 
-        # JSON DATA EXPORT
+        # JSON DATA EXPORT (Keeping for parity)
         import json
 
         def to_dict(obj):
             if hasattr(obj, "__dict__"):
                 d = dict(obj.__dict__)
                 d.pop("_sa_instance_state", None)
-                # Convert UUID and Datetime
                 for k, v in d.items():
                     if hasattr(v, "hex"):
                         d[k] = str(v)
@@ -1006,23 +946,18 @@ def report(
 
         export_data = {
             "timestamp": now_str,
-            "version": "0.47.1",
+            "version": "0.48.0",
             "telemetry": to_dict(curr_tel) if curr_tel else None,
             "rivers": latest_rivers,
             "rf_peaks": processed_rf,
             "software": latest_sw,
-            "strategic_stats": final_stats,
             "alerts": [to_dict(a) for a in alerts],
         }
-
         with open("tactical_intelligence_data.json", "w") as f:
             json.dump(export_data, f, indent=2)
 
         console.print(
-            "[bold green]Unified Intelligence HUD forged: tactical_intelligence_briefing.html[/bold green]"
-        )
-        console.print(
-            "[bold cyan]Intelligence Data Exported: tactical_intelligence_data.json[/bold cyan]"
+            "[bold green]Focused Intelligence HUD forged: tactical_intelligence_briefing.html[/bold green]"
         )
         if open_browser:
             import subprocess

@@ -262,14 +262,22 @@ class IntelligenceAgent:
         from sqlalchemy import select, or_
 
         async with async_session() as session:
-            stmt = (
-                select(Signal)
-                .where(
+            keywords = [k.strip() for k in query.split() if len(k.strip()) > 2]
+            if not keywords:
+                keywords = [query]
+
+            conditions = []
+            for kw in keywords:
+                conditions.append(
                     or_(
-                        Signal.title.ilike(f"%{query}%"),  # type: ignore
-                        Signal.content.ilike(f"%{query}%"),  # type: ignore
+                        Signal.title.ilike(f"%{kw}%"),  # type: ignore
+                        Signal.content.ilike(f"%{kw}%"),  # type: ignore
                     )
                 )
+
+            stmt = (
+                select(Signal)
+                .where(or_(*conditions))
                 .order_by(Signal.date.desc())  # type: ignore
                 .limit(limit)
             )
@@ -503,6 +511,8 @@ class TacticalAgent:
         self.netsec = NetworkAndSecurityScanner()
         self.software = LocalSoftwareScanner()
         self.rf_sweep = WidebandSDRScanner()
+        self.sentinel = SentinelScanner()
+        self.sentinel = SentinelScanner()
 
     async def generate_snapshot(self) -> TacticalSnapshot:
         results = await asyncio.gather(
@@ -512,6 +522,7 @@ class TacticalAgent:
             self.software.get_summary(),
             self.rf_sweep.get_snapshot_text(),
             self.netsec.get_summary(),
+            self.sentinel.get_summary(),
         )
 
         adsb_raw = results[0]
@@ -520,6 +531,8 @@ class TacticalAgent:
         sw = results[3]
         rf = results[4]
         netsec = results[5]
+        sentinel = results[6]
+        sentinel = results[6]
 
         adsb_lines = ["### AIRSPACE SURVEILLANCE (ADS-B)"]
         aircraft_list = adsb_raw.get("aircraft", [])
@@ -538,12 +551,16 @@ class TacticalAgent:
 
         raw_text = (
             f"Title: Master Tactical SITREP - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"{weather['text']}\n{netsec['text']}\n{adsb_text}\n{rivers['text']}\n{sw['text']}\n{rf['text']}"
+            f"{weather['text']}\n{netsec['text']}\n{sentinel['text']}\n{adsb_text}\n{rivers['text']}\n{sw['text']}\n{rf['text']}"
         )
+
+        aircraft_list = adsb_raw.get("aircraft", [])
+        mapped_count = len([a for a in aircraft_list if a.get("lat") and a.get("lon")])
 
         return TacticalSnapshot(
             temp_f=weather.get("temp"),
-            aircraft_count=len(adsb_raw.get("aircraft", [])),
+            aircraft_count=len(aircraft_list),
+            mapped_aircraft_count=mapped_count,
             lan_device_count=netsec["data"].get("devices", 0),
             ssh_failure_count=netsec["data"].get("ssh_fails", 0),
             internet_latency_ms=netsec["data"].get("latency"),
@@ -717,6 +734,65 @@ class LocalSoftwareScanner:
         data = {"apt": apt, "pip": pip, "uv": uv, "mamba": mamba}
         text = f"### SYSTEM SOFTWARE\n- **APT:** {apt}\n- **PIP:** {pip}\n- **UV:** {uv}\n- **MAMBA:** {mamba}"
         return {"text": text, "data": data}
+
+
+class SentinelScanner:
+    def __init__(self, db_path="/home/chuck/Projects/project_sentinel/sentinel.db"):
+        self.db_path = db_path
+
+    async def get_summary(self) -> dict:
+        import os
+        import sqlite3
+        import asyncio
+
+        if not os.path.exists(self.db_path):
+            return {
+                "text": "### PROJECT SENTINEL\n- **Status:** Database not found.",
+                "data": {},
+            }
+
+        def fetch():
+            try:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT id, timestamp, final_synthesis FROM scan ORDER BY timestamp DESC LIMIT 1"
+                )
+                scan_row = cursor.fetchone()
+                if not scan_row:
+                    return {
+                        "text": "### PROJECT SENTINEL\n- **Status:** No scans available.",
+                        "data": {},
+                    }
+
+                scan_id, timestamp, synthesis = scan_row
+                cursor.execute(
+                    "SELECT COUNT(*) FROM device WHERE scan_id = ?", (scan_id,)
+                )
+                device_count = cursor.fetchone()[0]
+
+                # Truncate synthesis to avoid blowing up the sitrep text
+                synth_short = synthesis.strip()[:1000] if synthesis else "None"
+                if len(synthesis or "") > 1000:
+                    synth_short += "..."
+
+                text = f"### PROJECT SENTINEL OVERVIEW\n- **Last Scan:** {timestamp}\n- **Monitored Devices:** {device_count}\n- **AI Synthesis:** {synth_short}"
+
+                return {
+                    "text": text,
+                    "data": {
+                        "scan_id": scan_id,
+                        "device_count": device_count,
+                        "synthesis": synth_short,
+                    },
+                }
+            except Exception as e:
+                return {
+                    "text": f"### PROJECT SENTINEL\n- **Error:** {str(e)}",
+                    "data": {},
+                }
+
+        return await asyncio.to_thread(fetch)
 
 
 class APRSStreamer:
