@@ -707,7 +707,7 @@ def report(
 
     async def _report():
         console.print(
-            "[bold blue]Forging v0.49.0 Two-Column Intelligence HUD...[/bold blue]"
+            "[bold blue]Forging v0.50.0 Two-Column Intelligence HUD...[/bold blue]"
         )
         map_b64 = await _generate_map_base64()
 
@@ -795,6 +795,7 @@ def report(
         .header-title { font-family: 'Orbitron', sans-serif; font-size: 2.2rem; font-weight: 900; text-shadow: 0 0 15px var(--neon-green); }
         .box { border: 1px solid var(--neon-green); background: var(--glass-bg); padding: 0; position: relative; margin-bottom: 25px; border-radius: 4px; box-shadow: inset 0 0 10px rgba(0, 255, 65, 0.1); overflow: visible; display: flex; flex-direction: column; }
         .box-content { padding: 25px 20px 20px 20px; overflow-y: auto; flex-grow: 1; }
+        .box-map-flush { padding: 10px 0 0 0 !important; overflow: hidden !important; }
         .box-label { position: absolute; top: -12px; left: 20px; background: var(--deep-bg); border: 1px solid var(--neon-green); padding: 2px 14px; color: var(--neon-green); font-weight: 900; font-size: 14px; z-index: 200; line-height: 1.2; box-shadow: 0 0 10px var(--deep-bg); }
         .map-frame { border: 1px solid var(--neon-green); border-radius: 4px; height: 300px; width: 100%; position: relative; overflow: hidden; background: #000; margin-top: 5px; }
         .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0, 255, 65, 0.1); padding: 8px 0; }
@@ -828,8 +829,8 @@ def report(
                     
                     <div class="box">
                         <div class="box-label">LOCAL TACTICAL MAP</div>
-                        <div class="box-content" style="padding-top: 10px;">
-                            <div class="map-frame">
+                        <div class="box-content box-map-flush">
+                            <div class="map-frame" style="height: 400px;">
                                 <div class="scan-line"></div>
                                 <iframe src="data:text/html;base64,{{ map_data }}" style="width:100%; height:100%; border:none;"></iframe>
                             </div>
