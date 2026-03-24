@@ -707,7 +707,7 @@ def report(
 
     async def _report():
         console.print(
-            "[bold blue]Forging v0.50.0 Two-Column Intelligence HUD...[/bold blue]"
+            "[bold blue]Forging v0.51.0 Two-Column Intelligence HUD...[/bold blue]"
         )
         map_b64 = await _generate_map_base64()
 
@@ -810,7 +810,7 @@ def report(
         template = jinja2.Template("""
         <!DOCTYPE html>
         <html>
-        <head><style>{{ css }}</style><title>RADAR // TWO-COLUMN HUD</title></head>
+        <head><style>{{ css }}</style><title>RADAR // TWO-COLUMN HUD</title><script>setTimeout(function(){ location.reload(); }, 60000);</script></head>
         <body>
             <div class="header">
                 <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // TACTICAL INTELLIGENCE HUD</div>
@@ -931,7 +931,7 @@ def report(
             sw=latest_sw,
             alerts=alerts,
             now=now_str,
-            version="0.49.2",
+            version="0.51.0",
             map_data=map_b64,
         )
 
