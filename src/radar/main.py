@@ -550,7 +550,7 @@ async def run_ingest(
             if "duplicate key value" not in str(e):
                 console.print(f"[red]Ingest failed:[/red] {e}")
         finally:
-            await engine.dispose()
+            pass
 
     await _ingest()
 
@@ -705,7 +705,7 @@ def report(
 
     async def _report():
         console.print(
-            "[bold blue]Forging v0.48.0 Focused Intelligence HUD...[/bold blue]"
+            "[bold blue]Forging v0.48.1 Focused Intelligence HUD...[/bold blue]"
         )
         map_b64 = await _generate_map_base64()
 
@@ -922,7 +922,7 @@ def report(
             sw=latest_sw,
             alerts=alerts,
             now=now_str,
-            version="0.48.0",
+            version="0.48.1",
             map_data=map_b64,
         )
 
