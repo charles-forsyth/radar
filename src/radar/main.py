@@ -791,16 +791,16 @@ def report(
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=JetBrains+Mono:wght@400;700&display=swap');
         :root { --neon-green: #00ff41; --deep-bg: #020406; --glass-bg: rgba(8, 12, 18, 0.9); --alert-red: #ff3131; }
-        body { background: var(--deep-bg); color: var(--neon-green); font-family: 'JetBrains Mono', monospace; margin: 0; padding: 20px; text-transform: uppercase; font-size: 11px; overflow-x: hidden; }
+        body { background: var(--deep-bg); color: var(--neon-green); font-family: 'JetBrains Mono', monospace; margin: 0; padding: 20px; text-transform: uppercase; font-size: 14px; overflow-x: hidden; }
         .hud-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; min-height: calc(100vh - 120px); margin-top: 10px; }
         .header { border: 1px solid var(--neon-green); padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; background: rgba(0, 255, 65, 0.08); margin-bottom: 20px; border-radius: 4px; }
-        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.6rem; font-weight: 900; text-shadow: 0 0 15px var(--neon-green); }
+        .header-title { font-family: 'Orbitron', sans-serif; font-size: 2.2rem; font-weight: 900; text-shadow: 0 0 15px var(--neon-green); }
         .box { border: 1px solid var(--neon-green); background: var(--glass-bg); padding: 0; position: relative; margin-bottom: 25px; border-radius: 4px; box-shadow: inset 0 0 10px rgba(0, 255, 65, 0.1); overflow: visible; display: flex; flex-direction: column; }
         .box-content { padding: 25px 20px 20px 20px; overflow-y: auto; flex-grow: 1; }
-        .box-label { position: absolute; top: -12px; left: 20px; background: var(--deep-bg); border: 1px solid var(--neon-green); padding: 2px 14px; color: var(--neon-green); font-weight: 900; font-size: 11px; z-index: 200; line-height: 1.2; box-shadow: 0 0 10px var(--deep-bg); }
+        .box-label { position: absolute; top: -12px; left: 20px; background: var(--deep-bg); border: 1px solid var(--neon-green); padding: 2px 14px; color: var(--neon-green); font-weight: 900; font-size: 14px; z-index: 200; line-height: 1.2; box-shadow: 0 0 10px var(--deep-bg); }
         .map-frame { border: 1px solid var(--neon-green); border-radius: 4px; height: 300px; width: 100%; position: relative; overflow: hidden; background: #000; margin-top: 5px; }
         .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0, 255, 65, 0.1); padding: 8px 0; }
-        .metric-big { font-size: 3rem; font-weight: 900; text-align: center; margin: 15px 0; font-family: 'Orbitron'; color: #fff; text-shadow: 0 0 10px var(--neon-green); }
+        .metric-big { font-size: 4rem; font-weight: 900; text-align: center; margin: 15px 0; font-family: 'Orbitron'; color: #fff; text-shadow: 0 0 10px var(--neon-green); }
         ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-thumb { background: var(--neon-green); }
         .pulse { animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
@@ -910,7 +910,7 @@ def report(
                     <div class="box" style="border-color: #008f11; color: #008f11;">
                         <div class="box-label" style="border-color: #008f11;">SYSTEM CORE HEALTH</div>
                         <div class="box-content">
-                            <div style="font-size: 11px; line-height:2.0;">
+                            <div style="font-size: 14px; line-height:2.0;">
                                 CORE UPTIME: 312H 14M<br>
                                 DB STATE: SQLITE RELATIONAL<br>
                                 INTEGRITY: 100% NOMINAL
@@ -932,7 +932,7 @@ def report(
             sw=latest_sw,
             alerts=alerts,
             now=now_str,
-            version="0.49.0",
+            version="0.49.1",
             map_data=map_b64,
         )
 
