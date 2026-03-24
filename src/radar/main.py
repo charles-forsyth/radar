@@ -633,9 +633,7 @@ def report(
     async def _generate_map_base64():
         tioga_coords = settings.HOME_COORDS
         # Increased zoom to 11 for "centered on home" feel
-        m = folium.Map(
-            location=tioga_coords, zoom_start=11, tiles="CartoDB dark_matter"
-        )
+        m = folium.Map(location=tioga_coords, zoom_start=9, tiles="CartoDB dark_matter")
 
         folium.Circle(
             radius=settings.SECTOR_RADIUS_MILES * 1609.34,
@@ -932,7 +930,7 @@ def report(
             sw=latest_sw,
             alerts=alerts,
             now=now_str,
-            version="0.49.1",
+            version="0.49.2",
             map_data=map_b64,
         )
 
