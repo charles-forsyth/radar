@@ -707,7 +707,7 @@ def report(
 
     async def _report():
         console.print(
-            "[bold blue]Forging v0.51.0 Two-Column Intelligence HUD...[/bold blue]"
+            "[bold blue]Forging v0.52.0 Two-Column Intelligence HUD...[/bold blue]"
         )
         map_b64 = await _generate_map_base64()
 
@@ -737,7 +737,7 @@ def report(
                     }
                 )
 
-            rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(40)
+            rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(200)
             rf_results = (await session.execute(rf_stmt)).scalars().all()
             rf_map = {}
             for r in rf_results:
@@ -746,6 +746,44 @@ def report(
                     rf_map[f_key] = []
                 if len(rf_map[f_key]) < 2:
                     rf_map[f_key].append(r)
+
+            def get_freq_desc(f):
+                if 25 <= f <= 28:
+                    return "CB Radio"
+                if 87 <= f <= 108:
+                    return "FM Broadcast"
+                if 118 <= f <= 136:
+                    return "Airband"
+                if 137 <= f <= 144:
+                    return "Aerospace / Sat"
+                if 144 <= f <= 148:
+                    return "2m Ham"
+                if 148 <= f <= 156:
+                    return "VHF Public Safety"
+                if 156 <= f <= 162:
+                    return "VHF Marine"
+                if 162 <= f <= 174:
+                    return "Federal / NOAA"
+                if 380 <= f <= 400:
+                    return "Trunked Radio"
+                if 400 <= f <= 420:
+                    return "Federal / Military"
+                if 420 <= f <= 450:
+                    return "70cm Ham"
+                if 450 <= f <= 470:
+                    return "UHF Public Safety / GMRS"
+                if 769 <= f <= 805:
+                    return "700MHz Public Safety (P25)"
+                if 806 <= f <= 869:
+                    return "800MHz Public Safety"
+                if 896 <= f <= 940:
+                    return "900MHz ISM"
+                if 1080 <= f <= 1100:
+                    return "ADS-B Aircraft"
+                if 1240 <= f <= 1300:
+                    return "23cm Ham"
+                return "Uncategorized Carrier"
+
             processed_rf = []
             for f_key, items in rf_map.items():
                 c, p = items[0], (items[1] if len(items) > 1 else None)
@@ -754,6 +792,7 @@ def report(
                         "freq": c.frequency_mhz,
                         "db": c.power_db,
                         "delta": c.power_db - p.power_db if p else 0,
+                        "desc": get_freq_desc(c.frequency_mhz),
                     }
                 )
             processed_rf.sort(key=lambda x: x["db"], reverse=True)
@@ -886,9 +925,12 @@ def report(
                         <div class="box-label">SIGINT SPECTRUM ANALYSIS</div>
                         <div class="box-content">
                             {% for f in rf %}
-                            <div class="stat-row">
-                                <span style="color:#008f11">{{ f.freq }} MHZ</span>
-                                <span>{{ f.db }} DB <span style="color:#ffff00">({% if f.delta > 0 %}+{% endif %}{{ "%.2f"|format(f.delta) }})</span></span>
+                            <div class="stat-row" style="flex-direction: column; align-items: flex-start; padding: 10px 0;">
+                                <div style="display: flex; justify-content: space-between; width: 100%;">
+                                    <span style="color:#008f11; font-weight: 900;">{{ f.freq }} MHZ</span>
+                                    <span>{{ f.db }} DB <span style="color:#ffff00">({% if f.delta > 0 %}+{% endif %}{{ "%.2f"|format(f.delta) }})</span></span>
+                                </div>
+                                <div style="font-size: 10px; color: #8b949e; font-style: italic; margin-top: 4px;">[{{ f.desc }}]</div>
                             </div>
                             {% endfor %}
                         </div>
@@ -931,7 +973,7 @@ def report(
             sw=latest_sw,
             alerts=alerts,
             now=now_str,
-            version="0.51.0",
+            version="0.52.0",
             map_data=map_b64,
         )
 
