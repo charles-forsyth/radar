@@ -616,12 +616,13 @@ def ingest(
 @app.command()
 @app.command()
 @app.command()
+@app.command()
 def report(
     open_browser: bool = typer.Option(
         True, "--open/--no-open", help="Open the report in browser."
     ),
 ):
-    """Generate the v0.48.0 Focused Intelligence HUD (Smaller Map, Expanded Sides)."""
+    """Generate the v0.49.0 Two-Column Tactical HUD (Small Map, Centered)."""
     import jinja2
     from sqlalchemy import select, desc
     import asyncio
@@ -631,7 +632,10 @@ def report(
 
     async def _generate_map_base64():
         tioga_coords = settings.HOME_COORDS
-        m = folium.Map(location=tioga_coords, zoom_start=8, tiles="CartoDB dark_matter")
+        # Increased zoom to 11 for "centered on home" feel
+        m = folium.Map(
+            location=tioga_coords, zoom_start=11, tiles="CartoDB dark_matter"
+        )
 
         folium.Circle(
             radius=settings.SECTOR_RADIUS_MILES * 1609.34,
@@ -705,7 +709,7 @@ def report(
 
     async def _report():
         console.print(
-            "[bold blue]Forging v0.48.1 Focused Intelligence HUD...[/bold blue]"
+            "[bold blue]Forging v0.49.0 Two-Column Intelligence HUD...[/bold blue]"
         )
         map_b64 = await _generate_map_base64()
 
@@ -787,18 +791,17 @@ def report(
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=JetBrains+Mono:wght@400;700&display=swap');
         :root { --neon-green: #00ff41; --deep-bg: #020406; --glass-bg: rgba(8, 12, 18, 0.9); --alert-red: #ff3131; }
-        body { background: var(--deep-bg); color: var(--neon-green); font-family: 'JetBrains Mono', monospace; margin: 0; padding: 20px; text-transform: uppercase; font-size: 10px; overflow-x: hidden; }
-        .hud-grid { display: grid; grid-template-columns: 400px 1fr 400px; gap: 15px; height: calc(100vh - 100px); margin-top: 10px; }
+        body { background: var(--deep-bg); color: var(--neon-green); font-family: 'JetBrains Mono', monospace; margin: 0; padding: 20px; text-transform: uppercase; font-size: 11px; overflow-x: hidden; }
+        .hud-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; min-height: calc(100vh - 120px); margin-top: 10px; }
         .header { border: 1px solid var(--neon-green); padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; background: rgba(0, 255, 65, 0.08); margin-bottom: 20px; border-radius: 4px; }
-        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.5rem; font-weight: 900; text-shadow: 0 0 15px var(--neon-green); }
-        .box { border: 1px solid var(--neon-green); background: var(--glass-bg); padding: 0; position: relative; margin-bottom: 20px; border-radius: 4px; box-shadow: inset 0 0 10px rgba(0, 255, 65, 0.1); overflow: visible; display: flex; flex-direction: column; }
-        .box-content { padding: 22px 15px 15px 15px; overflow-y: auto; flex-grow: 1; }
-        .box-label { position: absolute; top: -11px; left: 15px; background: var(--deep-bg); border: 1px solid var(--neon-green); padding: 2px 12px; color: var(--neon-green); font-weight: 900; font-size: 10px; z-index: 200; line-height: 1.2; box-shadow: 0 0 10px var(--deep-bg); }
-        .center-stack { display: flex; flex-direction: column; gap: 15px; height: 100%; }
-        .map-frame { border: 1px solid var(--neon-green); border-radius: 4px; height: 350px; width: 100%; position: relative; overflow: hidden; background: #000; }
+        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.6rem; font-weight: 900; text-shadow: 0 0 15px var(--neon-green); }
+        .box { border: 1px solid var(--neon-green); background: var(--glass-bg); padding: 0; position: relative; margin-bottom: 25px; border-radius: 4px; box-shadow: inset 0 0 10px rgba(0, 255, 65, 0.1); overflow: visible; display: flex; flex-direction: column; }
+        .box-content { padding: 25px 20px 20px 20px; overflow-y: auto; flex-grow: 1; }
+        .box-label { position: absolute; top: -12px; left: 20px; background: var(--deep-bg); border: 1px solid var(--neon-green); padding: 2px 14px; color: var(--neon-green); font-weight: 900; font-size: 11px; z-index: 200; line-height: 1.2; box-shadow: 0 0 10px var(--deep-bg); }
+        .map-frame { border: 1px solid var(--neon-green); border-radius: 4px; height: 300px; width: 100%; position: relative; overflow: hidden; background: #000; margin-top: 5px; }
         .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0, 255, 65, 0.1); padding: 8px 0; }
-        .metric-big { font-size: 2.8rem; font-weight: 900; text-align: center; margin: 15px 0; font-family: 'Orbitron'; color: #fff; text-shadow: 0 0 10px var(--neon-green); }
-        ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-thumb { background: var(--neon-green); }
+        .metric-big { font-size: 3rem; font-weight: 900; text-align: center; margin: 15px 0; font-family: 'Orbitron'; color: #fff; text-shadow: 0 0 10px var(--neon-green); }
+        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-thumb { background: var(--neon-green); }
         .pulse { animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
         .scan-line { width: 100%; height: 3px; background: rgba(0, 255, 65, 0.4); position: absolute; top: 0; left: 0; animation: scan 5s linear infinite; z-index: 100; pointer-events: none; box-shadow: 0 0 15px var(--neon-green); }
@@ -808,22 +811,33 @@ def report(
         template = jinja2.Template("""
         <!DOCTYPE html>
         <html>
-        <head><style>{{ css }}</style><title>RADAR // FOCUSED COMMAND HUD</title></head>
+        <head><style>{{ css }}</style><title>RADAR // TWO-COLUMN HUD</title></head>
         <body>
             <div class="header">
-                <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // FOCUSED INTELLIGENCE HUD</div>
+                <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // TACTICAL INTELLIGENCE HUD</div>
                 <div style="text-align: right; font-weight: 900;">
                     SECTOR: TIOGA PA | {{ now }} | v{{ version }}
                 </div>
             </div>
             
             <div class="hud-grid">
-                <!-- LEFT COLUMN -->
+                <!-- COLUMN 1: TACTICAL & SENSORS -->
                 <div class="col">
                     <div class="box">
-                        <div class="box-label">ENVIRONMENTAL SENSORS</div>
+                        <div class="box-label">ENVIRONMENTAL STATUS</div>
                         <div class="box-content"><div class="metric-big">{{ tel.temp_f if tel else '--' }}°F</div></div>
                     </div>
+                    
+                    <div class="box">
+                        <div class="box-label">LOCAL TACTICAL MAP</div>
+                        <div class="box-content" style="padding-top: 10px;">
+                            <div class="map-frame">
+                                <div class="scan-line"></div>
+                                <iframe src="data:text/html;base64,{{ map_data }}" style="width:100%; height:100%; border:none;"></iframe>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="box">
                         <div class="box-label">NETWORK TOPOLOGY</div>
                         <div class="box-content">
@@ -832,6 +846,7 @@ def report(
                             <div class="stat-row"><span>NET LATENCY</span><span>{{ tel.internet_latency_ms if tel else '--' }} MS</span></div>
                         </div>
                     </div>
+
                     <div class="box" style="flex-grow: 1;">
                         <div class="box-label">HYDROLOGY Board</div>
                         <div class="box-content">
@@ -843,38 +858,31 @@ def report(
                             {% endfor %}
                         </div>
                     </div>
-                    <div class="box" style="border-color: var(--alert-red);">
-                        <div class="box-label" style="color:var(--alert-red); border-color:var(--alert-red);">ACTIVE THREAT LOG</div>
-                        <div class="box-content">
-                            {% for a in alerts[:12] %}
-                            <div style="color:var(--alert-red); font-size:10px; margin-bottom:6px; border-bottom:1px solid rgba(255,49,49,0.1); padding-bottom:4px;">
-                                >> {{ a.message }}
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
                 </div>
 
-                <!-- CENTER COLUMN -->
-                <div class="col center-stack">
-                    <div class="map-frame">
-                        <div class="box-label">TACTICAL SITUATION MAP (LIVE)</div>
-                        <div class="scan-line"></div>
-                        <iframe src="data:text/html;base64,{{ map_data }}" style="width:100%; height:100%; border:none;"></iframe>
-                    </div>
-                </div>
-
-                <!-- RIGHT COLUMN -->
+                <!-- COLUMN 2: AIRSPACE & SYSTEM -->
                 <div class="col">
                     <div class="box">
                         <div class="box-label">AIRSPACE DENSITY</div>
                         <div class="box-content">
                             <div class="metric-big">{{ tel.aircraft_count if tel else '0' }}</div>
-                            <div style="text-align:center; font-size:10px; color:#8b949e; margin-top:-10px;">
+                            <div style="text-align:center; font-size:11px; color:#8b949e; margin-top:-10px;">
                                 MAPPED TARGETS: {{ tel.mapped_aircraft_count if tel else '0' }}
                             </div>
                         </div>
                     </div>
+
+                    <div class="box" style="border-color: var(--alert-red);">
+                        <div class="box-label" style="color:var(--alert-red); border-color:var(--alert-red);">ACTIVE THREAT LOG</div>
+                        <div class="box-content">
+                            {% for a in alerts[:10] %}
+                            <div style="color:var(--alert-red); font-size:11px; margin-bottom:8px; border-bottom:1px solid rgba(255,49,49,0.1); padding-bottom:5px;">
+                                >> {{ a.message }}
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
                     <div class="box" style="flex-grow: 1;">
                         <div class="box-label">SIGINT SPECTRUM ANALYSIS</div>
                         <div class="box-content">
@@ -886,6 +894,7 @@ def report(
                             {% endfor %}
                         </div>
                     </div>
+
                     <div class="box">
                         <div class="box-label">SOFTWARE ARSENAL</div>
                         <div class="box-content">
@@ -897,10 +906,11 @@ def report(
                             {% endfor %}
                         </div>
                     </div>
+
                     <div class="box" style="border-color: #008f11; color: #008f11;">
                         <div class="box-label" style="border-color: #008f11;">SYSTEM CORE HEALTH</div>
                         <div class="box-content">
-                            <div style="font-size: 10px; line-height:2.0;">
+                            <div style="font-size: 11px; line-height:2.0;">
                                 CORE UPTIME: 312H 14M<br>
                                 DB STATE: SQLITE RELATIONAL<br>
                                 INTEGRITY: 100% NOMINAL
@@ -922,14 +932,14 @@ def report(
             sw=latest_sw,
             alerts=alerts,
             now=now_str,
-            version="0.48.1",
+            version="0.49.0",
             map_data=map_b64,
         )
 
         with open("tactical_intelligence_briefing.html", "w") as f:
             f.write(html)
 
-        # JSON DATA EXPORT (Keeping for parity)
+        # JSON DATA EXPORT
         import json
 
         def to_dict(obj):
@@ -946,7 +956,7 @@ def report(
 
         export_data = {
             "timestamp": now_str,
-            "version": "0.48.0",
+            "version": "0.49.0",
             "telemetry": to_dict(curr_tel) if curr_tel else None,
             "rivers": latest_rivers,
             "rf_peaks": processed_rf,
@@ -957,14 +967,16 @@ def report(
             json.dump(export_data, f, indent=2)
 
         console.print(
-            "[bold green]Focused Intelligence HUD forged: tactical_intelligence_briefing.html[/bold green]"
+            "[bold green]Focused Two-Column HUD forged: tactical_intelligence_briefing.html[/bold green]"
         )
         if open_browser:
             import subprocess
 
             try:
-                subprocess.run(
-                    ["xdg-open", "tactical_intelligence_briefing.html"], check=False
+                subprocess.Popen(
+                    ["xdg-open", "tactical_intelligence_briefing.html"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
             except Exception:
                 pass
