@@ -738,7 +738,7 @@ def report(
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=JetBrains+Mono:wght@400;700&display=swap');
         :root { --neon-green: #00ff41; --deep-bg: #020406; --glass-bg: rgba(8, 12, 18, 0.9); --alert-red: #ff3131; --mesh-blue: #00d4ff; }
-        body { background: var(--deep-bg); color: var(--neon-green); font-family: 'JetBrains Mono', monospace; margin: 0; padding: 20px; text-transform: uppercase; font-size: 16px; overflow-x: hidden; }
+        body { background: var(--deep-bg); color: var(--neon-green); font-family: 'JetBrains Mono', monospace; margin: 0; padding: 20px; text-transform: uppercase; font-size: 18px; overflow-x: hidden; }
         .hud-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .header { border: 1px solid var(--neon-green); padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; background: rgba(0, 255, 65, 0.08); margin-bottom: 20px; border-radius: 4px; }
         .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.8rem; font-weight: 900; text-shadow: 0 0 10px var(--neon-green); }
@@ -746,8 +746,8 @@ def report(
         .box.blue { border-color: var(--mesh-blue); }
         .box.blue .box-label { border-color: var(--mesh-blue); color: var(--mesh-blue); }
         .box-content { padding: 20px; overflow-y: auto; flex-grow: 1; }
-        .box-label { position: absolute; top: -10px; left: 15px; background: var(--deep-bg); border: 1px solid var(--neon-green); padding: 1px 10px; color: var(--neon-green); font-weight: 900; font-size: 14px; z-index: 200; }
-        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0, 255, 65, 0.1); padding: 10px 0; font-size: 1.1rem; }
+        .box-label { position: absolute; top: -10px; left: 15px; background: var(--deep-bg); border: 1px solid var(--neon-green); padding: 1px 10px; color: var(--neon-green); font-weight: 900; font-size: 16px; z-index: 200; }
+        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0, 255, 65, 0.1); padding: 10px 0; font-size: 1.3rem; }
         .metric-big { font-size: 3rem; font-weight: 900; text-align: center; margin: 10px 0; font-family: 'Orbitron'; color: #fff; text-shadow: 0 0 10px var(--neon-green); }
         .pulse { animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
@@ -779,7 +779,17 @@ def report(
                     </div>
 
                     <div class="box"><div class="box-label">HYDROLOGY</div><div class="box-content">
-                        {% for r in rivers %}<div class="stat-row"><span>{{ r.name[:20] }}</span><span>{{ r.val }} {{ r.unit }}</span></div>{% endfor %}
+                        {% for r in rivers %}
+                        <div class="stat-row">
+                            <span>{{ r.name[:20] }}</span>
+                            <span>
+                                {{ r.val }} {{ r.unit }}
+                                {% if r.delta > 0 %}<span style="color: #ff4444; font-size: 0.8em; margin-left: 5px;">▲ {{ "%.2f"|format(r.delta) }}</span>
+                                {% elif r.delta < 0 %}<span style="color: #00ff41; font-size: 0.8em; margin-left: 5px;">▼ {{ "%.2f"|format(r.delta|abs) }}</span>
+                                {% else %}<span style="color: #8b949e; font-size: 0.8em; margin-left: 5px;">-</span>{% endif %}
+                            </span>
+                        </div>
+                        {% endfor %}
                     </div></div>
                 </div>
 
