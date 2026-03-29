@@ -700,16 +700,6 @@ def report(
                 db_stats['wifi_count'] = session.run("MATCH (d:SentinelDiscovery) WHERE d.type = 'WiFi' RETURN count(d) as c").single()["c"]
                 db_stats['intel_logs'] = session.run("MATCH (l:CaptainLog) RETURN count(l) as c").single()["c"]
                 
-                # Try to pull the GCP Master Lake total (Optional, fails gracefully)
-                try:
-                    import subprocess
-                    gcp_res = subprocess.run(["ssh", "-o", "ConnectTimeout=3", "forsythc@35.202.216.141", "sqlite3 /home/forsythc/aura_remote_mqtt.db 'SELECT COUNT(*) FROM master_sigint_lake;'"], capture_output=True, text=True)
-                    if gcp_res.returncode == 0:
-                        db_stats['wardrive_count'] = int(gcp_res.stdout.strip())
-                    else: db_stats['wardrive_count'] = "OFFLINE"
-                except: db_stats['wardrive_count'] = "OFFLINE"
-                
-                
             driver.close()
         except Exception as e:
             console.print(f"[yellow]Warning: Graph Intel sync failed: {e}[/yellow]")
