@@ -24,3 +24,14 @@ src/radar/tools/radar_extract
 src/radar/tools/radar_summarize
 src/radar/tools/radar_fetch
 test_ddg.html
+
+# Database and Logs
+radar.db
+*.log
+*.pid
+
+# Intelligence Artifacts
+*.html
+*.json
+!radar_export.json
+!.env.example
