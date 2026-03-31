@@ -1,10 +1,11 @@
 [project]
 name = "radar"
-version = "0.52.0"
+version = "0.52.1"
 description = "Personal Industry Intelligence CLI"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "neo4j>=5.28.1",
     "typer>=0.9.0",
     "rich>=13.0.0",
     "sqlmodel>=0.0.14",

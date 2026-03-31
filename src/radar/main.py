@@ -15,7 +15,7 @@ from radar.core.ingest import (
     TextIngestAgent,
 )
 from radar.core.models import KnowledgeGraphExtraction
-from radar.db.engine import async_session, engine
+from radar.db.engine import async_session
 from radar.db.init import init_db
 from radar.db.models import (
     Signal,
@@ -144,7 +144,7 @@ async def do_ask_logic(
                 break
             current_question = ""
     finally:
-        await engine.dispose()
+        pass
 
 
 @app.command()
@@ -407,7 +407,8 @@ def sync(
                                         f"Radar Alert: {domain}",
                                         msg,
                                     ],
-                                    check=False,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
                                 )
                             except Exception:
                                 pass
@@ -432,7 +433,7 @@ def sync(
                 await run_ingest(sitrep_text, voice, shared_intel)
 
         finally:
-            await engine.dispose()
+            pass
 
     asyncio.run(do_sync())
 
@@ -632,8 +633,12 @@ def report(
     from neo4j import GraphDatabase
 
     async def _generate_map_base64():
+        from neo4j import GraphDatabase
+
         tioga_coords = settings.HOME_COORDS
-        m = folium.Map(location=tioga_coords, zoom_start=11, tiles="CartoDB dark_matter")
+        m = folium.Map(
+            location=tioga_coords, zoom_start=11, tiles="CartoDB dark_matter"
+        )
 
         folium.Circle(
             radius=settings.SECTOR_RADIUS_MILES * 1609.34,
@@ -653,9 +658,13 @@ def report(
 
         # Add Mesh Nodes to Map
         try:
-            driver = GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "testpass123"))
+            driver = GraphDatabase.driver(
+                "bolt://localhost:7687", auth=("neo4j", "testpass123")
+            )
             with driver.session() as session:
-                m_nodes = session.run("MATCH (m:MeshNode) WHERE m.lat IS NOT NULL RETURN m").data()
+                m_nodes = session.run(
+                    "MATCH (m:MeshNode) WHERE m.lat IS NOT NULL RETURN m"
+                ).data()
                 for node in m_nodes:
                     n = node["m"]
                     folium.Marker(
@@ -664,42 +673,78 @@ def report(
                         icon=folium.Icon(color="blue", icon="rss", prefix="fa"),
                     ).add_to(m)
             driver.close()
-        except: pass
+        except Exception:
+            pass
 
         async with async_session() as session:
             # 1. LIVE TARGETS (Latest SITREP)
-            stmt = select(Signal).where(Signal.title.contains("SITREP")).order_by(desc(Signal.date)).limit(1)
+            stmt = (
+                select(Signal)
+                .where(Signal.title.contains("SITREP"))
+                .order_by(desc(Signal.date))
+                .limit(1)
+            )
             latest = (await session.execute(stmt)).scalar_one_or_none()
             if latest:
-                matches = re.finditer(r"Flight ([\w\s]+) at ([\d]+)ft \(Lat: ([\-\d\.]+), Lon: ([\-\d\.]+)\)", latest.content)
+                matches = re.finditer(
+                    r"Flight ([\w\s]+) at ([\d]+)ft \(Lat: ([\-\d\.]+), Lon: ([\-\d\.]+)\)",
+                    latest.content,
+                )
                 for match in matches:
-                    flight, alt, lat, lon = match.group(1), match.group(2), float(match.group(3)), float(match.group(4))
-                    folium.Marker([lat, lon], popup=f"LIVE: {flight} ({alt}ft)", icon=folium.Icon(color="red", icon="plane")).add_to(m)
+                    flight, alt, lat, lon = (
+                        match.group(1),
+                        match.group(2),
+                        float(match.group(3)),
+                        float(match.group(4)),
+                    )
+                    folium.Marker(
+                        [lat, lon],
+                        popup=f"LIVE: {flight} ({alt}ft)",
+                        icon=folium.Icon(color="red", icon="plane"),
+                    ).add_to(m)
 
         map_html = m._repr_html_()
         return base64.b64encode(map_html.encode()).decode()
 
     async def _report():
-        console.print("[bold cyan]Forging v0.55.0 Aura-Integrated Intelligence HUD...[/bold cyan]")
+        console.print(
+            "[bold cyan]Forging v0.55.0 Aura-Integrated Intelligence HUD...[/bold cyan]"
+        )
         map_b64 = await _generate_map_base64()
-        
+
         # Pull Graph Intel
         mesh_nodes = []
-        sentinel_intel = []
+
         try:
-            driver = GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "testpass123"))
+            driver = GraphDatabase.driver(
+                "bolt://localhost:7687", auth=("neo4j", "testpass123")
+            )
             with driver.session() as session:
-                mesh_nodes = session.run("MATCH (m:MeshNode) RETURN m.name as name, m.shortName as short, m.rssi as rssi, m.snr as snr, m.lat as lat, m.lon as lon ORDER BY m.rssi DESC").data()
-                ble_intel = session.run("MATCH (d:SentinelDiscovery) WHERE d.type = 'BLE' RETURN d.name as name, d.id as id, d.rssi as rssi, d.details as details, d.last_seen as last_seen ORDER BY d.last_seen DESC LIMIT 8").data()
-                wifi_intel = session.run("MATCH (d:SentinelDiscovery) WHERE d.type = 'WiFi' RETURN d.name as name, d.id as id, d.rssi as rssi, d.details as details, d.last_seen as last_seen ORDER BY d.last_seen DESC LIMIT 8").data()
-                
+                mesh_nodes = session.run(
+                    "MATCH (m:MeshNode) RETURN m.name as name, m.shortName as short, m.rssi as rssi, m.snr as snr, m.lat as lat, m.lon as lon ORDER BY m.rssi DESC"
+                ).data()
+                ble_intel = session.run(
+                    "MATCH (d:SentinelDiscovery) WHERE d.type = 'BLE' RETURN d.name as name, d.id as id, d.rssi as rssi, d.details as details, d.last_seen as last_seen ORDER BY d.last_seen DESC LIMIT 8"
+                ).data()
+                wifi_intel = session.run(
+                    "MATCH (d:SentinelDiscovery) WHERE d.type = 'WiFi' RETURN d.name as name, d.id as id, d.rssi as rssi, d.details as details, d.last_seen as last_seen ORDER BY d.last_seen DESC LIMIT 8"
+                ).data()
+
                 # Fetch Knowledge Graph metrics
                 db_stats = {}
-                db_stats['mesh_count'] = session.run("MATCH (m:MeshNode) RETURN count(m) as c").single()["c"]
-                db_stats['ble_count'] = session.run("MATCH (d:SentinelDiscovery) WHERE d.type = 'BLE' RETURN count(d) as c").single()["c"]
-                db_stats['wifi_count'] = session.run("MATCH (d:SentinelDiscovery) WHERE d.type = 'WiFi' RETURN count(d) as c").single()["c"]
-                db_stats['intel_logs'] = session.run("MATCH (l:CaptainLog) RETURN count(l) as c").single()["c"]
-                
+                db_stats["mesh_count"] = session.run(
+                    "MATCH (m:MeshNode) RETURN count(m) as c"
+                ).single()["c"]
+                db_stats["ble_count"] = session.run(
+                    "MATCH (d:SentinelDiscovery) WHERE d.type = 'BLE' RETURN count(d) as c"
+                ).single()["c"]
+                db_stats["wifi_count"] = session.run(
+                    "MATCH (d:SentinelDiscovery) WHERE d.type = 'WiFi' RETURN count(d) as c"
+                ).single()["c"]
+                db_stats["intel_logs"] = session.run(
+                    "MATCH (l:CaptainLog) RETURN count(l) as c"
+                ).single()["c"]
+
             driver.close()
         except Exception as e:
             console.print(f"[yellow]Warning: Graph Intel sync failed: {e}[/yellow]")
@@ -707,33 +752,58 @@ def report(
         async with async_session() as session:
             tel_stmt = select(Telemetry).order_by(desc(Telemetry.timestamp)).limit(1)
             curr_tel = (await session.execute(tel_stmt)).scalar_one_or_none()
-            
-            river_stmt = select(RiverLevel).order_by(desc(RiverLevel.timestamp)).limit(100)
+
+            river_stmt = (
+                select(RiverLevel).order_by(desc(RiverLevel.timestamp)).limit(100)
+            )
             river_results = (await session.execute(river_stmt)).scalars().all()
             river_map = {}
             for r in river_results:
-                if r.station_name not in river_map: river_map[r.station_name] = []
-                if len(river_map[r.station_name]) < 2: river_map[r.station_name].append(r)
+                if r.station_name not in river_map:
+                    river_map[r.station_name] = []
+                if len(river_map[r.station_name]) < 2:
+                    river_map[r.station_name].append(r)
             latest_rivers = []
             for name, items in river_map.items():
                 c, p = items[0], (items[1] if len(items) > 1 else None)
-                latest_rivers.append({"name": name, "val": c.value, "unit": c.unit, "delta": c.value - p.value if p else 0})
+                latest_rivers.append(
+                    {
+                        "name": name,
+                        "val": c.value,
+                        "unit": c.unit,
+                        "delta": c.value - p.value if p else 0,
+                    }
+                )
 
             rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(100)
             rf_results = (await session.execute(rf_stmt)).scalars().all()
-            processed_rf = [{"freq": r.frequency_mhz, "db": r.power_db} for r in rf_results[:10]]
+            processed_rf = [
+                {"freq": r.frequency_mhz, "db": r.power_db} for r in rf_results[:10]
+            ]
 
-            alert_stmt = select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(10)
+            alert_stmt = (
+                select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(10)
+            )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
             # Parse Flights
             flights = []
-            stmt_sitrep = select(Signal).where(Signal.title.contains("SITREP")).order_by(desc(Signal.date)).limit(1)
+            stmt_sitrep = (
+                select(Signal)
+                .where(Signal.title.contains("SITREP"))
+                .order_by(desc(Signal.date))
+                .limit(1)
+            )
             latest_sitrep = (await session.execute(stmt_sitrep)).scalar_one_or_none()
             if latest_sitrep:
-                matches = re.finditer(r"Flight ([\w\s]+) at ([\d]+)ft \(Lat: ([\-\d\.]+), Lon: ([\-\d\.]+)\)", latest_sitrep.content)
+                matches = re.finditer(
+                    r"Flight ([\w\s]+) at ([\d]+)ft \(Lat: ([\-\d\.]+), Lon: ([\-\d\.]+)\)",
+                    latest_sitrep.content,
+                )
                 for match in matches:
-                    flights.append({"callsign": match.group(1).strip(), "alt": match.group(2)})
+                    flights.append(
+                        {"callsign": match.group(1).strip(), "alt": match.group(2)}
+                    )
 
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=JetBrains+Mono:wght@400;700&display=swap');
@@ -836,15 +906,38 @@ def report(
         """)
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        html = template.render(css=report_css, db_stats=db_stats, tel=curr_tel, rivers=latest_rivers, rf=processed_rf, alerts=alerts, now=now_str, map_data=map_b64, mesh=mesh_nodes, ble=ble_intel, wifi=wifi_intel, flights=flights)
-        with open("tactical_intelligence_briefing.html", "w") as f: f.write(html)
-        
-        console.print("[bold green]Aura-Integrated HUD forged: tactical_intelligence_briefing.html[/bold green]")
+        html = template.render(
+            css=report_css,
+            db_stats=db_stats,
+            tel=curr_tel,
+            rivers=latest_rivers,
+            rf=processed_rf,
+            alerts=alerts,
+            now=now_str,
+            map_data=map_b64,
+            mesh=mesh_nodes,
+            ble=ble_intel,
+            wifi=wifi_intel,
+            flights=flights,
+        )
+        with open("tactical_intelligence_briefing.html", "w") as f:
+            f.write(html)
+
+        console.print(
+            "[bold green]Aura-Integrated HUD forged: tactical_intelligence_briefing.html[/bold green]"
+        )
         if open_browser:
             import subprocess
-            try: subprocess.Popen(["xdg-open", "tactical_intelligence_briefing.html"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except: pass
-        await engine.dispose()
+
+            try:
+                subprocess.Popen(
+                    ["xdg-open", "tactical_intelligence_briefing.html"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                pass
+        pass
 
     asyncio.run(_report())
 
@@ -887,7 +980,7 @@ def stats(
                     s.description or "N/A",
                 )
             console.print(table)
-        await engine.dispose()
+        pass
 
     asyncio.run(_stats())
 
@@ -900,6 +993,8 @@ def map():
     import re
 
     async def _map():
+        from neo4j import GraphDatabase
+
         console.print("[bold blue]Generating Offline Tactical Map...[/bold blue]")
         tioga_coords = settings.HOME_COORDS
         m = folium.Map(location=tioga_coords, zoom_start=7, tiles="CartoDB positron")
@@ -921,9 +1016,13 @@ def map():
         ).add_to(m)
         # Add Mesh Nodes to Map
         try:
-            driver = GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", "testpass123"))
+            driver = GraphDatabase.driver(
+                "bolt://localhost:7687", auth=("neo4j", "testpass123")
+            )
             with driver.session() as session:
-                m_nodes = session.run("MATCH (m:MeshNode) WHERE m.lat IS NOT NULL RETURN m").data()
+                m_nodes = session.run(
+                    "MATCH (m:MeshNode) WHERE m.lat IS NOT NULL RETURN m"
+                ).data()
                 for node in m_nodes:
                     n = node["m"]
                     folium.Marker(
@@ -932,7 +1031,8 @@ def map():
                         icon=folium.Icon(color="blue", icon="rss", prefix="fa"),
                     ).add_to(m)
             driver.close()
-        except: pass
+        except Exception:
+            pass
 
         async with async_session() as session:
             stmt = select(Signal).where(Signal.title.contains("SITREP")).limit(100)
@@ -953,7 +1053,7 @@ def map():
         map_file = "radar_map.html"
         m.save(map_file)
         console.print(f"[bold green]Map generated at: {map_file}[/bold green]")
-        await engine.dispose()
+        pass
 
     asyncio.run(_map())
 
@@ -1039,7 +1139,7 @@ def init():
         )
         await init_db()
         console.print("[bold green]RADAR SYSTEM READY - DATABASE ONLINE[/bold green]")
-        await engine.dispose()
+        pass
 
     asyncio.run(_init())
 
