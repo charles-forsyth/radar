@@ -104,7 +104,7 @@ class RadarApp(App):
                 # Get Alerts
                 astmt = (
                     select(TacticalAlert)
-                    .order_by(desc(TacticalAlert.created_at)) # type: ignore
+                    .order_by(desc(TacticalAlert.created_at))  # type: ignore
                     .limit(20)
                 )
                 aresults = await session.execute(astmt)
