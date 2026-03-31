@@ -64,6 +64,7 @@ class Statistic(SQLModel, table=True):
     )  # e.g., "Gas Price", "Wildfire Acres", "GPU Benchmarks"
     value: float
     unit: Optional[str] = None  # e.g., "USD", "Acres", "t/s"
+    description: Optional[str] = None  # Brief context about the stat
     source_signal_id: Optional[uuid.UUID] = Field(default=None)
 
 
