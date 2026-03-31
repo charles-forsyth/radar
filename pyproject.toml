@@ -34,6 +34,7 @@ dependencies = [
     "sentence-transformers>=5.2.3",
     "trafilatura>=2.0.0",
     "aiosqlite>=0.22.1",
+    "neo4j>=6.1.0",
 ]
 
 [project.scripts]

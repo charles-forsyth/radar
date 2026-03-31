@@ -7,6 +7,7 @@ class TacticalSnapshot(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now)
     temp_f: Optional[float] = None
     aircraft_count: int = 0
+    mapped_aircraft_count: int = 0
     lan_device_count: int = 0
     ssh_failure_count: int = 0
     internet_latency_ms: Optional[float] = None
