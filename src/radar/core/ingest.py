@@ -6,71 +6,107 @@ import re
 from datetime import datetime
 from typing import List, Tuple, Optional
 import httpx
+import trafilatura
 
 from radar.db.models import Signal
 from radar.core.models import KnowledgeGraphExtraction, TacticalSnapshot
 from radar.db.engine import async_session
+from radar.config import settings
 
 logger = logging.getLogger(__name__)
 
 
 class IntelligenceAgent:
     def __init__(self, intel: Optional["IntelligenceAgent"] = None):
-        self.embed_bin = "src/radar/tools/radar_embed"
-        self.extract_bin = "src/radar/tools/radar_extract"
-        self.summarize_bin = "src/radar/tools/radar_summarize"
-        self.fetch_bin = "src/radar/tools/radar_fetch"
-
-        # Note: Heavy neural network disabled for v0.36 Pure Stats/SQLite focus
+        self.embed_bin = settings.TOOL_EMBED
+        self.extract_bin = settings.TOOL_EXTRACT
+        self.summarize_bin = settings.TOOL_SUMMARIZE
+        self.fetch_bin = settings.TOOL_FETCH
         self.embedding_model = None
 
     async def get_embedding(self, text: str) -> List[float]:
-        # Return dummy vector for legacy schema compatibility if needed,
-        # though we removed the vector column from models.py
+        """Return dummy vector for legacy schema compatibility."""
         return [0.0] * 384
 
     def extract_stats(self, text: str) -> List[dict]:
-        """High-fidelity tactical OSINT/SIGINT numerical extraction engine."""
+        """High-fidelity tactical OSINT/SIGINT numerical extraction engine with positional context."""
         import re
 
         stats = []
 
-        # 1. SPECIALIZED SIGINT (Frequencies, Bandwidths, Power)
-        # Power levels in dBm (e.g., -95.4 dBm)
-        dbm_matches = re.findall(r"(-\d+\.?\d*)\s*dBm", text, re.IGNORECASE)
-        for val in dbm_matches:
-            try:
-                stats.append(
-                    {"label": "Noise Floor/RSSI", "value": float(val), "unit": "dBm"}
-                )
-            except ValueError:
-                continue
+        def get_subject(match_pos, full_text):
+            """Heuristic to find the subject/noun phrase immediately before a specific match position."""
+            pre = (
+                full_text[max(0, match_pos - 80) : match_pos].replace("\n", " ").strip()
+            )
+            parts = re.split(r"[,.;:]", pre)
+            chunk = parts[-1].strip()
+            chunk = re.sub(
+                r"^(the|a|an|of|to|for|is|are|was|were|has|been|which|that|this|these)\s+",
+                "",
+                chunk,
+                flags=re.IGNORECASE,
+            )
+            chunk = re.sub(
+                r"\s+(rose|fell|dropped|increased|decreased|at|of|to|is|with|by|around|nearly|about)$",
+                "",
+                chunk,
+                flags=re.IGNORECASE,
+            )
+            words = chunk.split()
+            if len(words) > 5:
+                chunk = " ".join(words[-5:])
+            return chunk.title() if len(chunk) > 3 else None
 
-        # Signal Bandwidths (e.g., 12.5 kHz, 20 MHz)
-        bw_matches = re.findall(
+        def get_context(match_pos, match_len, full_text, window=80):
+            start = max(0, match_pos - window)
+            end = min(len(full_text), match_pos + match_len + window)
+            return full_text[start:end].replace("\n", " ").strip()
+
+        # 1. SPECIALIZED SIGINT
+        for m in re.finditer(r"(-\d+\.?\d*)\s*dBm", text, re.IGNORECASE):
+            val = m.group(1)
+            subject = get_subject(m.start(), text)
+            stats.append(
+                {
+                    "label": subject if subject else "Noise Floor/RSSI",
+                    "value": float(val),
+                    "unit": "dBm",
+                    "description": get_context(m.start(), len(m.group(0)), text),
+                }
+            )
+
+        for m in re.finditer(
             r"(\d+\.?\d*)\s*(kHz|MHz|GHz)\s*(?:bandwidth|BW|channel spacing)",
             text,
             re.IGNORECASE,
-        )
-        for val, unit in bw_matches:
-            try:
-                stats.append({"label": "Signal BW", "value": float(val), "unit": unit})
-            except ValueError:
-                continue
+        ):
+            val, unit = m.group(1), m.group(2)
+            subject = get_subject(m.start(), text)
+            stats.append(
+                {
+                    "label": subject if subject else "Signal BW",
+                    "value": float(val),
+                    "unit": unit,
+                    "description": get_context(m.start(), len(m.group(0)), text),
+                }
+            )
 
-        # Encryption Depth (e.g., 256-bit AES)
-        enc_matches = re.findall(
+        for m in re.finditer(
             r"(\d+)-bit\s*(?:AES|DES|encryption|key)", text, re.IGNORECASE
-        )
-        for val in enc_matches:
-            try:
-                stats.append(
-                    {"label": "Encryption Depth", "value": float(val), "unit": "bit"}
-                )
-            except ValueError:
-                continue
+        ):
+            val = m.group(1)
+            subject = get_subject(m.start(), text)
+            stats.append(
+                {
+                    "label": subject if subject else "Encryption Depth",
+                    "value": float(val),
+                    "unit": "bit",
+                    "description": get_context(m.start(), len(m.group(0)), text),
+                }
+            )
 
-        # 2. TACTICAL OSINT (Troops, Casualties, Hardware)
+        # 2. TACTICAL OSINT
         tactical_patterns = [
             (
                 r"(\d+,?\d*)\s*(?:troops|personnel|soldiers|combatants)",
@@ -103,91 +139,117 @@ class IntelligenceAgent:
                 "Dist",
             ),
         ]
-        for pattern, label, unit in tactical_patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            for val in matches:
+        for pattern, default_label, unit in tactical_patterns:
+            for m in re.finditer(pattern, text, re.IGNORECASE):
+                val = m.group(1)
+                subject = get_subject(m.start(), text)
                 try:
                     stats.append(
                         {
-                            "label": label,
+                            "label": subject if subject else default_label,
                             "value": float(val.replace(",", "")),
                             "unit": unit,
+                            "description": get_context(
+                                m.start(), len(m.group(0)), text
+                            ),
                         }
                     )
                 except ValueError:
                     continue
 
-        # 3. FINANCIAL OSINT (Scaled Currencies)
-        financial_patterns = [
-            (r"\$(\d+\.?\d*)\s*([MBK]|Million|Billion)", "Strategic Value"),
-        ]
-        for pattern, label in financial_patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            for val, scale in matches:
-                try:
-                    f_val = float(val)
-                    s = scale.upper()
-                    if s.startswith("B") or s == "BILLION":
-                        f_val *= 1_000_000_000
-                    elif s.startswith("M") or s == "MILLION":
-                        f_val *= 1_000_000
-                    elif s.startswith("K"):
-                        f_val *= 1_000
-                    stats.append({"label": label, "value": f_val, "unit": "USD"})
-                except ValueError:
-                    continue
-
-        # 4. Standard Heuristics (Gas, Percentages, Units)
-        gas_prices = re.findall(
-            r"(?:Gas|Fuel|Gasoline):\s*\$([0-9,]+\.?\d*)", text, re.IGNORECASE
-        )
-        for val in gas_prices:
+        # 3. FINANCIAL OSINT
+        for m in re.finditer(
+            r"\$(\d+\.?\d*)\s*([MBK]|Million|Billion)", text, re.IGNORECASE
+        ):
+            val, scale = m.group(1), m.group(2)
+            subject = get_subject(m.start(), text)
             try:
+                f_val = float(val)
+                s = scale.upper()
+                if s.startswith("B") or s == "BILLION":
+                    f_val *= 1_000_000_000
+                elif s.startswith("M") or s == "MILLION":
+                    f_val *= 1_000_000
+                elif s.startswith("K"):
+                    f_val *= 1_000
                 stats.append(
                     {
-                        "label": "Gas Price",
-                        "value": float(val.replace(",", "")),
+                        "label": subject if subject else "Strategic Value",
+                        "value": f_val,
                         "unit": "USD",
+                        "description": get_context(m.start(), len(m.group(0)), text),
                     }
                 )
             except ValueError:
                 continue
 
-        currency = re.findall(r"\$([0-9,]+\.?\d*)", text)
-        for val in currency:
+        # 4. Standard Heuristics
+        for m in re.finditer(
+            r"(?:Gas|Fuel|Gasoline):\s*\$([0-9,]+\.?\d*)", text, re.IGNORECASE
+        ):
+            val = m.group(1)
+            stats.append(
+                {
+                    "label": "Gas Price",
+                    "value": float(val.replace(",", "")),
+                    "unit": "USD",
+                    "description": get_context(m.start(), len(m.group(0)), text),
+                }
+            )
+
+        for m in re.finditer(r"\$([0-9,]+\.?\d*)", text):
+            val = m.group(1)
+            subject = get_subject(m.start(), text)
             try:
                 f_val = float(val.replace(",", ""))
-                if not any(
-                    s["value"] == f_val and s["label"] == "Gas Price" for s in stats
-                ):
+                if not any(s["value"] == f_val and s["unit"] == "USD" for s in stats):
                     stats.append(
-                        {"label": "Price/Value", "value": f_val, "unit": "USD"}
+                        {
+                            "label": subject if subject else "Price/Value",
+                            "value": f_val,
+                            "unit": "USD",
+                            "description": get_context(
+                                m.start(), len(m.group(0)), text
+                            ),
+                        }
                     )
             except ValueError:
                 continue
 
-        pcts = re.findall(r"(\d+\.?\d*)%", text)
-        for val in pcts:
+        for m in re.finditer(r"(\d+\.?\d*)%", text):
+            val = m.group(1)
+            subject = get_subject(m.start(), text)
             try:
-                stats.append({"label": "Percentage", "value": float(val), "unit": "%"})
+                stats.append(
+                    {
+                        "label": subject if subject else "Percentage",
+                        "value": float(val),
+                        "unit": "%",
+                        "description": get_context(m.start(), len(m.group(0)), text),
+                    }
+                )
             except ValueError:
                 continue
 
-        patterns = [
+        unit_patterns = [
             (r"(\d+,?\d*)\s*(?:acres|acre)", "Land Area", "Acres"),
             (r"(\d+,?\d*)\s*(?:gallons|gal)", "Fuel Volume", "Gallons"),
             (r"(\d+,?\d*)\s*(?:t/s|tokens/sec)", "Performance", "t/s"),
             (r"(\d+,?\d*)\s*(?:beds|bed count)", "Medical Capacity", "Beds"),
         ]
-        for pattern, label, unit in patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            for val in matches:
+        for pattern, default_label, unit in unit_patterns:
+            for m in re.finditer(pattern, text, re.IGNORECASE):
+                val = m.group(1)
+                subject = get_subject(m.start(), text)
                 try:
                     stats.append(
                         {
-                            "label": label,
+                            "label": subject if subject else default_label,
                             "value": float(val.replace(",", "")),
                             "unit": unit,
+                            "description": get_context(
+                                m.start(), len(m.group(0)), text
+                            ),
                         }
                     )
                 except ValueError:
@@ -200,15 +262,22 @@ class IntelligenceAgent:
         from sqlalchemy import select, or_
 
         async with async_session() as session:
-            # Simple keyword search on title and content
-            stmt = (
-                select(Signal)
-                .where(
+            keywords = [k.strip() for k in query.split() if len(k.strip()) > 2]
+            if not keywords:
+                keywords = [query]
+
+            conditions = []
+            for kw in keywords:
+                conditions.append(
                     or_(
-                        Signal.title.ilike(f"%{query}%"),  # type: ignore
-                        Signal.content.ilike(f"%{query}%"),  # type: ignore
+                        Signal.title.ilike(f"%{kw}%"),  # type: ignore
+                        Signal.content.ilike(f"%{kw}%"),  # type: ignore
                     )
                 )
+
+            stmt = (
+                select(Signal)
+                .where(or_(*conditions))
                 .order_by(Signal.date.desc())  # type: ignore
                 .limit(limit)
             )
@@ -218,8 +287,6 @@ class IntelligenceAgent:
 
     def _clean_html(self, html: str) -> str:
         """Use Trafilatura for high-precision content extraction."""
-        import trafilatura
-
         try:
             result = trafilatura.extract(
                 html, include_comments=False, include_tables=True, no_fallback=False
@@ -290,7 +357,6 @@ class IntelligenceAgent:
             source="local_nlp",
             date=datetime.now(),
         )
-        # KG extraction disabled in v0.36
         return signal, KnowledgeGraphExtraction(entities=[], connections=[], trends=[])
 
     async def answer_question(
@@ -309,7 +375,6 @@ class IntelligenceAgent:
     async def detect_anomalies(
         self, current_sitrep: str, baseline_context: str
     ) -> List[dict]:
-        # Simple keyword-based anomaly detection for v0.36
         anomalies = []
         t = current_sitrep.lower()
         if "critical" in t or "emergency" in t or "fire" in t:
@@ -334,33 +399,37 @@ class DeepResearchAgent:
         combined_text = f"🎯 {topic}\n"
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            from ddgs import DDGS
+            try:
+                page = await browser.new_page()
+                from ddgs import DDGS
 
-            with DDGS() as ddgs:
-                results = list(ddgs.text(topic, max_results=5))
-                urls = [r["href"] for r in results]
+                with DDGS() as ddgs:
+                    results = list(ddgs.text(topic, max_results=5))
+                    urls = [r["href"] for r in results]
 
-            for url in urls:
-                try:
-                    if url.lower().endswith(".pdf"):
-                        content = self.intel._fetch_url(url)
-                    else:
-                        await page.goto(
-                            url, wait_until="domcontentloaded", timeout=30000
-                        )
-                        await asyncio.sleep(3)
-                        html = await page.content()
-                        content = self.intel._clean_html(html)
-                        if not content:
-                            content = await page.evaluate(
-                                "() => document.body.innerText"
+                for url in urls:
+                    try:
+                        if url.lower().endswith(".pdf"):
+                            content = self.intel._fetch_url(url)
+                        else:
+                            await page.goto(
+                                url, wait_until="domcontentloaded", timeout=30000
                             )
-                    if content:
-                        combined_text += f"\n--- Source: {url} ---\n{content[:5000]}"
-                except Exception:
-                    continue
-            await browser.close()
+                            await asyncio.sleep(3)
+                            html = await page.content()
+                            content = self.intel._clean_html(html)
+                            if not content:
+                                content = await page.evaluate(
+                                    "() => document.body.innerText"
+                                )
+                        if content:
+                            combined_text += (
+                                f"\n--- Source: {url} ---\n{content[:5000]}"
+                            )
+                    except Exception:
+                        continue
+            finally:
+                await browser.close()
         return combined_text
 
 
@@ -374,46 +443,47 @@ class BrowserIngestAgent:
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            await page.goto(url, wait_until="networkidle", timeout=60000)
-            await asyncio.sleep(5)
+            try:
+                page = await browser.new_page()
+                await page.goto(url, wait_until="networkidle", timeout=60000)
+                await asyncio.sleep(5)
 
-            content = ""
-            if "broadcastify.com" in url:
-                try:
-                    await page.wait_for_selector(".btable", timeout=15000)
-                    extracted_feeds = await page.evaluate(
-                        """() => {
-                        const results = [];
-                        const rows = document.querySelectorAll('.btable tr');
-                        rows.forEach(row => {
-                            const cells = row.querySelectorAll('td');
-                            if (cells.length > 3) {
-                                const feedName = cells[1].innerText ? cells[1].innerText.trim().split('\\n').join(' - ') : "";
-                                const genre = cells[2].innerText ? cells[2].innerText.trim() : "";
-                                const listeners = cells[3].innerText ? cells[3].innerText.trim() : "";
-                                if (genre.includes('Public Safety') || parseInt(listeners) >= 0) {
-                                    results.push(`Feed: ${feedName} | Genre: ${genre} | Listeners: ${listeners}`);
-                                }
-                            }
-                        });
-                        return results;
-                    }"""
-                    )
-                    content = "BROADCASTIFY LIVE FEED DATA:\n" + "\n".join(
-                        extracted_feeds
-                    )
-                except Exception:
-                    pass
+                content = ""
+                if "broadcastify.com" in url:
+                    try:
+                        await page.wait_for_selector(".btable", timeout=15000)
+                        extracted_feeds = await page.evaluate(
+                            "() => { "
+                            "const results = []; "
+                            "const rows = document.querySelectorAll('.btable tr'); "
+                            "rows.forEach(row => { "
+                            "const cells = row.querySelectorAll('td'); "
+                            "if (cells.length > 3) { "
+                            "const feedName = cells[1].innerText ? cells[1].innerText.trim().replace(/\\n/g, ' - ') : ''; "
+                            "const genre = cells[2].innerText ? cells[2].innerText.trim() : ''; "
+                            "const listeners = cells[3].innerText ? cells[3].innerText.trim() : ''; "
+                            "if (genre.includes('Public Safety') || parseInt(listeners) >= 0) { "
+                            "results.push(`Feed: ${feedName} | Genre: ${genre} | Listeners: ${listeners}`); "
+                            "} "
+                            "} "
+                            "}); "
+                            "return results; "
+                            "}"
+                        )
+                        content = "BROADCASTIFY LIVE FEED DATA:\n" + "\n".join(
+                            extracted_feeds
+                        )
+                    except Exception:
+                        pass
 
-            if not content:
-                html = await page.content()
-                content = self.intel._clean_html(html)
                 if not content:
-                    content = await page.evaluate("() => document.body.innerText")
-
-            await browser.close()
-            return content
+                    html = await page.content()
+                    content = self.intel._clean_html(html)
+                    if not content:
+                        content = await page.evaluate("() => document.body.innerText")
+                return content
+            finally:
+                await browser.close()
 
 
 class TextIngestAgent:
@@ -429,7 +499,6 @@ class RSSIngestAgent:
         self.intel = intel or IntelligenceAgent()
 
     async def sync_news(self) -> List[Tuple[Signal, KnowledgeGraphExtraction]]:
-        # Simplified placeholder for v0.36
         return []
 
 
@@ -442,6 +511,8 @@ class TacticalAgent:
         self.netsec = NetworkAndSecurityScanner()
         self.software = LocalSoftwareScanner()
         self.rf_sweep = WidebandSDRScanner()
+        self.sentinel = SentinelScanner()
+        self.sentinel = SentinelScanner()
 
     async def generate_snapshot(self) -> TacticalSnapshot:
         results = await asyncio.gather(
@@ -451,6 +522,7 @@ class TacticalAgent:
             self.software.get_summary(),
             self.rf_sweep.get_snapshot_text(),
             self.netsec.get_summary(),
+            self.sentinel.get_summary(),
         )
 
         adsb_raw = results[0]
@@ -459,15 +531,36 @@ class TacticalAgent:
         sw = results[3]
         rf = results[4]
         netsec = results[5]
+        sentinel = results[6]
+        sentinel = results[6]
+
+        adsb_lines = ["### AIRSPACE SURVEILLANCE (ADS-B)"]
+        aircraft_list = adsb_raw.get("aircraft", [])
+        for ac in aircraft_list:
+            lat, lon = ac.get("lat"), ac.get("lon")
+            if lat and lon:
+                flight = ac.get("flight", "UNK").strip()
+                alt = ac.get("alt_baro", ac.get("alt_geom", 0))
+                adsb_lines.append(
+                    f"- Flight {flight} at {alt}ft (Lat: {lat}, Lon: {lon})"
+                )
+        if len(adsb_lines) == 1:
+            adsb_lines.append("- No aircraft in detection range.")
+
+        adsb_text = "\n".join(adsb_lines)
 
         raw_text = (
             f"Title: Master Tactical SITREP - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"{weather['text']}\n{netsec['text']}\n{rivers['text']}\n{sw['text']}\n{rf['text']}"
+            f"{weather['text']}\n{netsec['text']}\n{sentinel['text']}\n{adsb_text}\n{rivers['text']}\n{sw['text']}\n{rf['text']}"
         )
+
+        aircraft_list = adsb_raw.get("aircraft", [])
+        mapped_count = len([a for a in aircraft_list if a.get("lat") and a.get("lon")])
 
         return TacticalSnapshot(
             temp_f=weather.get("temp"),
-            aircraft_count=len(adsb_raw.get("aircraft", [])),
+            aircraft_count=len(aircraft_list),
+            mapped_aircraft_count=mapped_count,
             lan_device_count=netsec["data"].get("devices", 0),
             ssh_failure_count=netsec["data"].get("ssh_fails", 0),
             internet_latency_ms=netsec["data"].get("latency"),
@@ -514,12 +607,14 @@ class SectorScanner:
 
     async def get_atmos_weather(self) -> dict:
         try:
-            r = subprocess.run(
-                ["/home/chuck/.local/bin/atmos", self.loc],
-                capture_output=True,
-                text=True,
+            proc = await asyncio.create_subprocess_exec(
+                settings.ATMOS_BIN,
+                self.loc,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            text = re.sub(r"\x1b\[[0-9;]*m", "", r.stdout).strip()
+            stdout, _ = await proc.communicate()
+            text = re.sub(r"\x1b\[[0-9;]*m", "", stdout.decode()).strip()
             temp_match = re.search(r"(\d+\.\d+)°F", text)
             return {
                 "text": text,
@@ -538,24 +633,27 @@ class USGSRiverGauge:
     async def get_levels(self) -> dict:
         url = f"https://waterservices.usgs.gov/nwis/iv/?format=json&sites={','.join(self.site_codes)}&parameterCd=00060,00065&siteStatus=all"
         async with httpx.AsyncClient() as client:
-            resp = await client.get(url)
-            if resp.status_code != 200:
-                return {"text": f"Error: {resp.status_code}", "data": []}
-            data = resp.json()
-            res = []
-            structured = []
-            for ts in data.get("value", {}).get("timeSeries", []):
-                name = ts["sourceInfo"]["siteName"]
-                val_str = ts["values"][0]["value"][0]["value"]
-                val = float(val_str)
-                unit = (
-                    "ft"
-                    if "height" in ts["variable"]["variableName"].lower()
-                    else "cfs"
-                )
-                res.append(f"- {name}: {val} {unit}")
-                structured.append({"name": name, "value": val, "unit": unit})
-            return {"text": "\n".join(sorted(list(set(res)))), "data": structured}
+            try:
+                resp = await client.get(url, timeout=30)
+                if resp.status_code != 200:
+                    return {"text": f"Error: {resp.status_code}", "data": []}
+                data = resp.json()
+                res = []
+                structured = []
+                for ts in data.get("value", {}).get("timeSeries", []):
+                    name = ts["sourceInfo"]["siteName"]
+                    val_str = ts["values"][0]["value"][0]["value"]
+                    val = float(val_str)
+                    unit = (
+                        "ft"
+                        if "height" in ts["variable"]["variableName"].lower()
+                        else "cfs"
+                    )
+                    res.append(f"- {name}: {val} {unit}")
+                    structured.append({"name": name, "value": val, "unit": unit})
+                return {"text": "\n".join(sorted(list(set(res)))), "data": structured}
+            except Exception as e:
+                return {"text": f"USGS Error: {str(e)}", "data": []}
 
 
 class WidebandSDRScanner:
@@ -589,24 +687,21 @@ class WidebandSDRScanner:
 
 class NetworkAndSecurityScanner:
     async def get_summary(self) -> dict:
-        arp_output = subprocess.run(
-            ["sudo", "-n", "arp-scan", "-l"], capture_output=True, text=True
-        ).stdout
+        def run_sync_cmd(args):
+            return subprocess.run(args, capture_output=True, text=True).stdout
+
+        arp_output = run_sync_cmd(["sudo", "-n", "arp-scan", "-l"])
         device_count = len(
             re.findall(r"^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+", arp_output, re.MULTILINE)
         )
 
-        ping_output = subprocess.run(
-            ["ping", "-c", "1", "1.1.1.1"], capture_output=True, text=True
-        ).stdout
+        ping_output = run_sync_cmd(["ping", "-c", "1", "1.1.1.1"])
         latency = re.search(r"time=([\d\.]+) ms", ping_output)
         latency_val = float(latency.group(1)) if latency else None
 
-        auth_output = subprocess.run(
-            ["sudo", "-n", "grep", "Failed password", "/var/log/auth.log"],
-            capture_output=True,
-            text=True,
-        ).stdout
+        auth_output = run_sync_cmd(
+            ["sudo", "-n", "grep", "Failed password", "/var/log/auth.log"]
+        )
         ssh_fails = len(auth_output.strip().split("\n")) if auth_output.strip() else 0
 
         text = f"### NETWORK & SECURITY INTEGRITY\n- **Latency:** {latency_val}ms\n- **Devices:** {device_count}\n- **SSH Fails:** {ssh_fails}"
@@ -632,13 +727,72 @@ class LocalSoftwareScanner:
                 return 0
 
         apt = get_count("dpkg -l | wc -l")
-        pip = get_count("pip list | wc -l")
+        pip = get_count(f"{settings.PYTHON_BIN} -m pip list | wc -l")
         uv = get_count("uv pip list | wc -l")
         mamba = get_count("micromamba list | wc -l")
 
         data = {"apt": apt, "pip": pip, "uv": uv, "mamba": mamba}
         text = f"### SYSTEM SOFTWARE\n- **APT:** {apt}\n- **PIP:** {pip}\n- **UV:** {uv}\n- **MAMBA:** {mamba}"
         return {"text": text, "data": data}
+
+
+class SentinelScanner:
+    def __init__(self, db_path="/home/chuck/Projects/project_sentinel/sentinel.db"):
+        self.db_path = db_path
+
+    async def get_summary(self) -> dict:
+        import os
+        import sqlite3
+        import asyncio
+
+        if not os.path.exists(self.db_path):
+            return {
+                "text": "### PROJECT SENTINEL\n- **Status:** Database not found.",
+                "data": {},
+            }
+
+        def fetch():
+            try:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT id, timestamp, final_synthesis FROM scan ORDER BY timestamp DESC LIMIT 1"
+                )
+                scan_row = cursor.fetchone()
+                if not scan_row:
+                    return {
+                        "text": "### PROJECT SENTINEL\n- **Status:** No scans available.",
+                        "data": {},
+                    }
+
+                scan_id, timestamp, synthesis = scan_row
+                cursor.execute(
+                    "SELECT COUNT(*) FROM device WHERE scan_id = ?", (scan_id,)
+                )
+                device_count = cursor.fetchone()[0]
+
+                # Truncate synthesis to avoid blowing up the sitrep text
+                synth_short = synthesis.strip()[:1000] if synthesis else "None"
+                if len(synthesis or "") > 1000:
+                    synth_short += "..."
+
+                text = f"### PROJECT SENTINEL OVERVIEW\n- **Last Scan:** {timestamp}\n- **Monitored Devices:** {device_count}\n- **AI Synthesis:** {synth_short}"
+
+                return {
+                    "text": text,
+                    "data": {
+                        "scan_id": scan_id,
+                        "device_count": device_count,
+                        "synthesis": synth_short,
+                    },
+                }
+            except Exception as e:
+                return {
+                    "text": f"### PROJECT SENTINEL\n- **Error:** {str(e)}",
+                    "data": {},
+                }
+
+        return await asyncio.to_thread(fetch)
 
 
 class APRSStreamer:

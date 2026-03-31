@@ -1,7 +1,7 @@
 import asyncio
 import click
 import typer
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
@@ -14,6 +14,7 @@ from radar.core.ingest import (
     RSSIngestAgent,
     TextIngestAgent,
 )
+from radar.core.models import KnowledgeGraphExtraction
 from radar.db.engine import async_session
 from radar.db.init import init_db
 from radar.db.models import (
@@ -28,6 +29,7 @@ from radar.db.models import (
     Statistic,
 )
 from sqlalchemy import select, desc
+from radar.config import settings
 
 
 app = typer.Typer(name="radar", help="📡 Personal Industry Intelligence Brain")
@@ -94,19 +96,12 @@ async def do_ask_logic(
                 current_question = ""
                 continue
 
-            if json_out:
+            with console.status("[bold blue]Thinking...[/bold blue]"):
                 answer = await (
                     intel.chat(current_question, relevant_signals, history)
                     if active_session_id
                     else intel.answer_question(current_question, relevant_signals)
                 )
-            else:
-                with console.status("[bold blue]Thinking...[/bold blue]"):
-                    answer = await (
-                        intel.chat(current_question, relevant_signals, history)
-                        if active_session_id
-                        else intel.answer_question(current_question, relevant_signals)
-                    )
 
             if active_session_id:
                 async with async_session() as session:
@@ -203,9 +198,6 @@ def sync(
         os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
         os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 
-        # Instantiate IntelligenceAgent ONCE here so the model stays warm
-        from radar.core.ingest import IntelligenceAgent
-
         shared_intel = IntelligenceAgent()
 
         try:
@@ -220,7 +212,7 @@ def sync(
                         topics = [line.strip() for line in f if line.strip()]
                     agent = DeepResearchAgent(intel=shared_intel)
 
-                    # Process topics concurrently with a Semaphore to prevent exploding memory
+                    # Process topics concurrently
                     sem = asyncio.Semaphore(5)
 
                     async def process_topic(topic):
@@ -246,7 +238,6 @@ def sync(
                 rss_agent = RSSIngestAgent(intel=shared_intel)
                 news_results = await rss_agent.sync_news()
                 for signal, kg in news_results:
-                    # Direct ingestion logic to avoid shell overhead
                     await save_ingest_to_db(signal, kg, shared_intel)
                     console.print(f"[green]Ingested News:[/green] {signal.title}")
 
@@ -260,12 +251,18 @@ def sync(
                 for place in places:
                     console.print(f"[cyan]Routing to:[/cyan] {place}")
                     try:
-                        roam_cmd = ["roam", "route", place, "--weather", "-F", "gas"]
+                        roam_cmd = [
+                            settings.ROAM_BIN,
+                            "route",
+                            place,
+                            "--weather",
+                            "-F",
+                            "gas",
+                        ]
                         result = subprocess.run(
                             roam_cmd, capture_output=True, text=True
                         )
                         if result.returncode == 0:
-                            # Remove ANSI escape codes
                             import re
 
                             clean_out = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
@@ -299,13 +296,10 @@ def sync(
                         for target in dyn_targets:
                             parts = target.split("|", 1)
                             if len(parts) == 2:
-                                url = parts[0].strip()
-                                instructions = parts[1].strip()
+                                url, inst = parts[0].strip(), parts[1].strip()
                                 console.print(f"[cyan]Dynamic Scrape:[/cyan] {url}")
                                 try:
-                                    text = await browser_agent.extract(
-                                        url, instructions
-                                    )
+                                    text = await browser_agent.extract(url, inst)
                                     final_text = f"Title: Dynamic Web Extraction - {url}\n\n{text}"
                                     await run_ingest(final_text, voice, shared_intel)
                                 except Exception as e:
@@ -314,9 +308,6 @@ def sync(
                                     )
 
             if tactical:
-                from sqlalchemy import select, desc
-                from datetime import timedelta
-
                 console.print(
                     "[bold blue]Executing Tactical SITREP Ingest...[/bold blue]"
                 )
@@ -330,11 +321,12 @@ def sync(
                         select(Signal)
                         .where(Signal.title.contains("SITREP"))
                         .where(Signal.date >= seven_days_ago)
-                        .order_by(desc(Signal.date))
+                        .order_by(desc(Signal.date))  # type: ignore
                         .limit(50)
                     )
-                    baseline_res = await session.execute(baseline_stmt)
-                    baseline_sitreps = baseline_res.scalars().all()
+                    baseline_sitreps = (
+                        (await session.execute(baseline_stmt)).scalars().all()
+                    )
 
                 baseline_context = "\n\n".join(
                     [
@@ -361,6 +353,7 @@ def sync(
                         Telemetry(
                             temp_f=snapshot.temp_f,
                             aircraft_count=snapshot.aircraft_count,
+                            mapped_aircraft_count=snapshot.mapped_aircraft_count,
                             lan_device_count=snapshot.lan_device_count,
                             ssh_failure_count=snapshot.ssh_failure_count,
                             internet_latency_ms=snapshot.internet_latency_ms,
@@ -386,17 +379,15 @@ def sync(
 
                     # 2. SAVE ALERTS
                     for anomaly in anomalies:
-                        severity = anomaly["severity"]
-                        domain = anomaly["domain"]
-                        msg = anomaly["message"]
-
-                        # Log to DB
-                        new_alert = TacticalAlert(
-                            domain=domain, severity=severity, message=msg
+                        severity, domain, msg = (
+                            anomaly["severity"],
+                            anomaly["domain"],
+                            anomaly["message"],
                         )
-                        session.add(new_alert)
+                        session.add(
+                            TacticalAlert(domain=domain, severity=severity, message=msg)
+                        )
 
-                        # High-Priority Alerts
                         if severity in ["WARNING", "CRITICAL"]:
                             console.print(
                                 f"[bold red]TACTICAL ALERT [{domain}]:[/bold red] {msg}"
@@ -416,7 +407,8 @@ def sync(
                                         f"Radar Alert: {domain}",
                                         msg,
                                     ],
-                                    check=False,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
                                 )
                             except Exception:
                                 pass
@@ -425,8 +417,8 @@ def sync(
                                 alert_text = f"Captain, tactical anomaly detected in {domain} domain. {msg}"
                                 subprocess.run(
                                     [
-                                        "/home/chuck/bin/python3",
-                                        "/home/chuck/Scripts/generate_voice.py",
+                                        settings.PYTHON_BIN,
+                                        settings.VOICE_SCRIPT,
                                         "--temp",
                                         alert_text,
                                     ]
@@ -437,7 +429,6 @@ def sync(
                             )
 
                     await session.commit()
-                # -------------------------
 
                 await run_ingest(sitrep_text, voice, shared_intel)
 
@@ -447,9 +438,10 @@ def sync(
     asyncio.run(do_sync())
 
 
-async def save_ingest_to_db(signal, kg, intel: IntelligenceAgent):
+async def save_ingest_to_db(
+    signal: Signal, kg: KnowledgeGraphExtraction, intel: IntelligenceAgent
+):
     """Helper to persist a signal and its extracted stats to SQLite."""
-    # Extract structured statistics from content
     extracted_stats = intel.extract_stats(signal.content)
 
     async with async_session() as session:
@@ -457,12 +449,9 @@ async def save_ingest_to_db(signal, kg, intel: IntelligenceAgent):
             session.add(signal)
             await session.flush()
 
-            # Save extracted stats
             for s in extracted_stats:
-                # Categorize based on title keywords or label
                 category = "GENERAL"
-                t_lower = signal.title.lower()
-                l_lower = s["label"].lower()
+                t_lower, l_lower = signal.title.lower(), s["label"].lower()
 
                 if any(
                     k in t_lower
@@ -527,9 +516,11 @@ async def save_ingest_to_db(signal, kg, intel: IntelligenceAgent):
                         label=s["label"],
                         value=s["value"],
                         unit=s["unit"],
+                        description=s.get("description"),
                         source_signal_id=signal.id,
                     )
                 )
+
             await session.commit()
         except Exception as e:
             await session.rollback()
@@ -547,25 +538,20 @@ async def run_ingest(
     async def _ingest():
         try:
             signal, kg = await agent.ingest(text)
-            # Use shared intel or the agent's internal one
             intel = shared_intel if shared_intel else agent.intel
             await save_ingest_to_db(signal, kg, intel)
-
             console.print(f"[green]Ingested:[/green] {signal.title}")
 
             if voice:
                 alert_text = f"New intelligence report ingested: {signal.title}"
                 subprocess.run(
-                    [
-                        "/home/chuck/bin/python3",
-                        "/home/chuck/Scripts/generate_voice.py",
-                        "--temp",
-                        alert_text,
-                    ]
+                    [settings.PYTHON_BIN, settings.VOICE_SCRIPT, "--temp", alert_text]
                 )
         except Exception as e:
             if "duplicate key value" not in str(e):
                 console.print(f"[red]Ingest failed:[/red] {e}")
+        finally:
+            pass
 
     await _ingest()
 
@@ -603,13 +589,10 @@ def ingest(
 
             asyncio.run(run_dynamic())
             return
-        else:
-            # Not implementing simple static web ingest in this block for brevity, fallback to manual text
-            pass
 
     text = ""
     if source == "-":
-        text = click.get_text_stream("stdin").read()
+        text = sys.stdin.read()
     elif source:
         try:
             with open(source, "r") as f:
@@ -619,9 +602,9 @@ def ingest(
     elif file:
         text = file.read()
     elif not sys.stdin.isatty():
-        text = click.get_text_stream("stdin").read()
+        text = sys.stdin.read()
     else:
-        raise typer.Exit(code=1)
+        pass
 
     if not text.strip():
         console.print("[red]Error: Empty input.[/red]")
@@ -631,26 +614,145 @@ def ingest(
 
 
 @app.command()
+@app.command()
+@app.command()
+@app.command()
+@app.command()
 def report(
     open_browser: bool = typer.Option(
-        True, "--open", help="Open the report in browser."
+        True, "--open/--no-open", help="Open the report in browser."
     ),
 ):
-    """Generate a high-fidelity 'Total Intelligence Wall' for all extracted statistics."""
+    """Generate the v0.55.0 Multi-Spectrum Tactical HUD (Aura Integrated)."""
     import jinja2
     from sqlalchemy import select, desc
     import asyncio
+    import folium
+    import re
+    import base64
+    from neo4j import GraphDatabase
 
-    async def _report():
-        console.print("[bold blue]Forging v0.38 Total Intelligence Wall...[/bold blue]")
+    async def _generate_map_base64():
+        from neo4j import GraphDatabase
+
+        tioga_coords = settings.HOME_COORDS
+        m = folium.Map(
+            location=tioga_coords, zoom_start=11, tiles="CartoDB dark_matter"
+        )
+
+        folium.Circle(
+            radius=settings.SECTOR_RADIUS_MILES * 1609.34,
+            location=tioga_coords,
+            popup=f"{settings.SECTOR_RADIUS_MILES}-Mile Sector",
+            color="#00ff41",
+            fill=True,
+            fill_color="#00ff41",
+            fill_opacity=0.03,
+        ).add_to(m)
+
+        folium.Marker(
+            tioga_coords,
+            popup="BASE",
+            icon=folium.Icon(color="green", icon="home"),
+        ).add_to(m)
+
+        # Add Mesh Nodes to Map
+        try:
+            driver = GraphDatabase.driver(
+                "bolt://localhost:7687", auth=("neo4j", "testpass123")
+            )
+            with driver.session() as session:
+                m_nodes = session.run(
+                    "MATCH (m:MeshNode) WHERE m.lat IS NOT NULL RETURN m"
+                ).data()
+                for node in m_nodes:
+                    n = node["m"]
+                    folium.Marker(
+                        [n["lat"], n["lon"]],
+                        popup=f"Mesh: {n.get('name', 'Unknown')} ({n.get('shortName', '?')})<br>SNR: {n.get('snr', 0)}dB",
+                        icon=folium.Icon(color="blue", icon="rss", prefix="fa"),
+                    ).add_to(m)
+            driver.close()
+        except Exception:
+            pass
 
         async with async_session() as session:
-            # 1. Fetch Relational Telemetry
-            tel_stmt = select(Telemetry).order_by(desc(Telemetry.timestamp)).limit(2)
-            tel_results = (await session.execute(tel_stmt)).scalars().all()
-            curr_tel = tel_results[0] if len(tel_results) > 0 else None
+            # 1. LIVE TARGETS (Latest SITREP)
+            stmt = (
+                select(Signal)
+                .where(Signal.title.contains("SITREP"))
+                .order_by(desc(Signal.date))
+                .limit(1)
+            )
+            latest = (await session.execute(stmt)).scalar_one_or_none()
+            if latest:
+                matches = re.finditer(
+                    r"Flight ([\w\s]+) at ([\d]+)ft \(Lat: ([\-\d\.]+), Lon: ([\-\d\.]+)\)",
+                    latest.content,
+                )
+                for match in matches:
+                    flight, alt, lat, lon = (
+                        match.group(1),
+                        match.group(2),
+                        float(match.group(3)),
+                        float(match.group(4)),
+                    )
+                    folium.Marker(
+                        [lat, lon],
+                        popup=f"LIVE: {flight} ({alt}ft)",
+                        icon=folium.Icon(color="red", icon="plane"),
+                    ).add_to(m)
 
-            # 2. Fetch Rivers (All stations)
+        map_html = m._repr_html_()
+        return base64.b64encode(map_html.encode()).decode()
+
+    async def _report():
+        console.print(
+            "[bold cyan]Forging v0.55.0 Aura-Integrated Intelligence HUD...[/bold cyan]"
+        )
+        map_b64 = await _generate_map_base64()
+
+        # Pull Graph Intel
+        mesh_nodes = []
+
+        try:
+            driver = GraphDatabase.driver(
+                "bolt://localhost:7687", auth=("neo4j", "testpass123")
+            )
+            with driver.session() as session:
+                mesh_nodes = session.run(
+                    "MATCH (m:MeshNode) RETURN m.name as name, m.shortName as short, m.rssi as rssi, m.snr as snr, m.lat as lat, m.lon as lon ORDER BY m.rssi DESC"
+                ).data()
+                ble_intel = session.run(
+                    "MATCH (d:SentinelDiscovery) WHERE d.type = 'BLE' RETURN d.name as name, d.id as id, d.rssi as rssi, d.details as details, d.last_seen as last_seen ORDER BY d.last_seen DESC LIMIT 8"
+                ).data()
+                wifi_intel = session.run(
+                    "MATCH (d:SentinelDiscovery) WHERE d.type = 'WiFi' RETURN d.name as name, d.id as id, d.rssi as rssi, d.details as details, d.last_seen as last_seen ORDER BY d.last_seen DESC LIMIT 8"
+                ).data()
+
+                # Fetch Knowledge Graph metrics
+                db_stats = {}
+                db_stats["mesh_count"] = session.run(
+                    "MATCH (m:MeshNode) RETURN count(m) as c"
+                ).single()["c"]
+                db_stats["ble_count"] = session.run(
+                    "MATCH (d:SentinelDiscovery) WHERE d.type = 'BLE' RETURN count(d) as c"
+                ).single()["c"]
+                db_stats["wifi_count"] = session.run(
+                    "MATCH (d:SentinelDiscovery) WHERE d.type = 'WiFi' RETURN count(d) as c"
+                ).single()["c"]
+                db_stats["intel_logs"] = session.run(
+                    "MATCH (l:CaptainLog) RETURN count(l) as c"
+                ).single()["c"]
+
+            driver.close()
+        except Exception as e:
+            console.print(f"[yellow]Warning: Graph Intel sync failed: {e}[/yellow]")
+
+        async with async_session() as session:
+            tel_stmt = select(Telemetry).order_by(desc(Telemetry.timestamp)).limit(1)
+            curr_tel = (await session.execute(tel_stmt)).scalar_one_or_none()
+
             river_stmt = (
                 select(RiverLevel).order_by(desc(RiverLevel.timestamp)).limit(100)
             )
@@ -673,208 +775,214 @@ def report(
                     }
                 )
 
-            # 3. Fetch RF Peaks
-            rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(40)
+            rf_stmt = select(RFPeak).order_by(desc(RFPeak.timestamp)).limit(100)
             rf_results = (await session.execute(rf_stmt)).scalars().all()
-            rf_map = {}
-            for r in rf_results:
-                f_key = round(r.frequency_mhz, 1)
-                if f_key not in rf_map:
-                    rf_map[f_key] = []
-                if len(rf_map[f_key]) < 2:
-                    rf_map[f_key].append(r)
-            processed_rf = []
-            for f, items in rf_map.items():
-                c, p = items[0], (items[1] if len(items) > 1 else None)
-                processed_rf.append(
-                    {
-                        "freq": c.frequency_mhz,
-                        "db": c.power_db,
-                        "delta": c.power_db - p.power_db if p else 0,
-                    }
-                )
-            processed_rf.sort(key=lambda x: x["db"], reverse=True)
+            processed_rf = [
+                {"freq": r.frequency_mhz, "db": r.power_db} for r in rf_results[:10]
+            ]
 
-            # 4. Fetch Software
-            sw_stmt = (
-                select(SoftwareInventory)
-                .order_by(desc(SoftwareInventory.timestamp))
-                .limit(20)
-            )
-            sw_results = (await session.execute(sw_stmt)).scalars().all()
-            sw_map = {}
-            for s in sw_results:
-                if s.manager not in sw_map:
-                    sw_map[s.manager] = []
-                if len(sw_map[s.manager]) < 2:
-                    sw_map[s.manager].append(s)
-            latest_sw = []
-            for m, items in sw_map.items():
-                c, p = items[0], (items[1] if len(items) > 1 else None)
-                latest_sw.append(
-                    {
-                        "manager": m.upper(),
-                        "count": c.package_count,
-                        "delta": c.package_count - p.package_count if p else 0,
-                    }
-                )
-
-            # 5. Fetch ALL Statistics (Huge limit)
-            stats_stmt = (
-                select(Statistic).order_by(desc(Statistic.timestamp)).limit(1000)
-            )
-            all_stats = (await session.execute(stats_stmt)).scalars().all()
-
-            # 6. Fetch Alerts
             alert_stmt = (
-                select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(15)
+                select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(10)
             )
             alerts = (await session.execute(alert_stmt)).scalars().all()
 
-        # Complex Categorization for the Data Wall
-        stats_map = {}
-        for s in all_stats:
-            key = (s.category, s.label)
-            if key not in stats_map:
-                stats_map[key] = []
-            if len(stats_map[key]) < 2:
-                stats_map[key].append(s)
-
-        final_stats = {}
-        for (cat, label), items in stats_map.items():
-            c, p = items[0], (items[1] if len(items) > 1 else None)
-            if cat not in final_stats:
-                final_stats[cat] = []
-            final_stats[cat].append(
-                {
-                    "label": label,
-                    "val": c.value,
-                    "unit": c.unit or "",
-                    "delta": c.value - p.value if p else 0,
-                }
+            # Parse Flights
+            flights = []
+            stmt_sitrep = (
+                select(Signal)
+                .where(Signal.title.contains("SITREP"))
+                .order_by(desc(Signal.date))
+                .limit(1)
             )
+            latest_sitrep = (await session.execute(stmt_sitrep)).scalar_one_or_none()
+            if latest_sitrep:
+                matches = re.finditer(
+                    r"Flight ([\w\s]+) at ([\d]+)ft \(Lat: ([\-\d\.]+), Lon: ([\-\d\.]+)\)",
+                    latest_sitrep.content,
+                )
+                for match in matches:
+                    flights.append(
+                        {"callsign": match.group(1).strip(), "alt": match.group(2)}
+                    )
 
         report_css = """
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&family=JetBrains+Mono:wght@400;700&display=swap');
-        body { background-color: #020406; color: #00ff41; font-family: 'JetBrains Mono', monospace; margin: 0; padding: 15px; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; }
-        .wall-grid { display: grid; grid-template-columns: 320px 1fr 320px; gap: 10px; }
-        .header { grid-column: 1 / span 3; border: 1px solid #00ff41; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; background: #00ff4111; margin-bottom: 10px; }
-        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.3rem; font-weight: 900; text-shadow: 0 0 10px #00ff41; }
-        .box { border: 1px solid #00ff41; background: #080c12; padding: 12px; position: relative; margin-bottom: 10px; box-shadow: inset 0 0 8px #00ff4111; overflow-y: auto; }
-        .box-label { position: absolute; top: -8px; left: 12px; background: #020406; border: 1px solid #00ff41; padding: 0 6px; color: #00ff41; font-weight: bold; font-size: 8px; }
-        .metric-big { font-size: 2.2rem; font-weight: 900; text-align: center; margin: 5px 0; }
-        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid #002105; padding: 4px 0; }
-        .stat-label { color: #008f11; }
-        .cat-title { color: #000; background: #00ff41; padding: 2px 6px; font-weight: bold; font-size: 8px; margin-top: 10px; margin-bottom: 8px; display: inline-block; box-shadow: 0 0 5px #00ff41; }
-        .data-card { border: 1px solid #004111; background: #05080c; padding: 6px; margin-bottom: 4px; }
-        .trend-up { color: #ff3131; } .trend-down { color: #39d353; }
+        :root { --neon-green: #00ff41; --deep-bg: #020406; --glass-bg: rgba(8, 12, 18, 0.9); --alert-red: #ff3131; --mesh-blue: #00d4ff; }
+        body { background: var(--deep-bg); color: var(--neon-green); font-family: 'JetBrains Mono', monospace; margin: 0; padding: 20px; text-transform: uppercase; font-size: 18px; overflow-x: hidden; }
+        .hud-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .header { border: 1px solid var(--neon-green); padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; background: rgba(0, 255, 65, 0.08); margin-bottom: 20px; border-radius: 4px; }
+        .header-title { font-family: 'Orbitron', sans-serif; font-size: 1.8rem; font-weight: 900; text-shadow: 0 0 10px var(--neon-green); }
+        .box { border: 1px solid var(--neon-green); background: var(--glass-bg); position: relative; margin-bottom: 20px; border-radius: 4px; display: flex; flex-direction: column; }
+        .box.blue { border-color: var(--mesh-blue); }
+        .box.blue .box-label { border-color: var(--mesh-blue); color: var(--mesh-blue); }
+        .box-content { padding: 20px; overflow-y: auto; flex-grow: 1; }
+        .box-label { position: absolute; top: -10px; left: 15px; background: var(--deep-bg); border: 1px solid var(--neon-green); padding: 1px 10px; color: var(--neon-green); font-weight: 900; font-size: 16px; z-index: 200; }
+        .stat-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(0, 255, 65, 0.1); padding: 10px 0; font-size: 1.3rem; }
+        .metric-big { font-size: 3rem; font-weight: 900; text-align: center; margin: 10px 0; font-family: 'Orbitron'; color: #fff; text-shadow: 0 0 10px var(--neon-green); }
         .pulse { animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
-        ::-webkit-scrollbar { width: 3px; }
-        ::-webkit-scrollbar-thumb { background: #00ff41; }
         """
 
         template = jinja2.Template("""
-        <html>
-        <head><style>{{ css }}</style><title>RADAR TOTAL INTEL WALL</title></head>
+        <!DOCTYPE html><html><head><style>{{ css }}</style><title>AURA // RADAR HUD</title></head>
         <body>
             <div class="header">
-                <div class="header-title"><span class="pulse">●</span> RADAR COMMAND // TOTAL INTELLIGENCE WALL</div>
-                <div style="text-align: right; font-weight: bold;">SECTOR: TIOGA PA | {{ now }} | v{{ version }}</div>
+                <div class="header-title"><span class="pulse">●</span> AURA COMMAND // INTEGRATED INTELLIGENCE</div>
+                <div style="text-align: right; font-weight: 900;">TIOGA SECTOR | {{ now }} | v0.55.0</div>
             </div>
             
-            <div class="wall-grid">
-                <!-- LEFT SIDEBAR: ENVIRONMENTAL & SECURITY -->
+            <div class="hud-grid">
                 <div class="col">
-                    <div class="box"><div class="box-label">ATMOSPHERICS</div><div class="metric-big">{{ tel.temp_f }}°F</div></div>
-                    <div class="box">
-                        <div class="box-label">LAN & SECURITY TOPOLOGY</div>
-                        <div class="stat-row"><span class="stat-label">ACTIVE NODES</span><span>{{ tel.lan_device_count }}</span></div>
-                        <div class="stat-row"><span class="stat-label">SSH FAILURES</span><span style="color:#ff3131">{{ tel.ssh_failure_count }}</span></div>
-                        <div class="stat-row"><span class="stat-label">NET LATENCY</span><span>{{ tel.internet_latency_ms }} ms</span></div>
-                    </div>
-                    <div class="box" style="height: 300px;">
-                        <div class="box-label">HYDROLOGY SENSORS</div>
-                        {% for r in rivers %}<div class="stat-row"><span class="stat-label">{{ r.name[:20] }}</span><span>{{ r.val }} {{ r.unit }} <span style="color:#ffff00">({% if r.delta > 0 %}+{% endif %}{{ "%.2f"|format(r.delta) }})</span></span></div>{% endfor %}
-                    </div>
-                    <div class="box" style="border-color: #ff3131;">
-                        <div class="box-label" style="color:#ff3131; border-color:#ff3131;">THREAT LOG</div>
-                        {% for a in alerts[:6] %}<div style="color:#ff3131; font-size:8px; margin-bottom:3px; border-bottom:1px solid #ff313122;">! {{ a.message }}</div>{% endfor %}
-                    </div>
-                </div>
-
-                <!-- CENTER: THE TOTAL DATA WALL -->
-                <div class="col">
-                    <div class="box" style="height: 750px;">
-                        <div class="box-label">STRATEGIC DATA WALL // ALL EXTRACTED NUMERICAL INTELLIGENCE</div>
-                        {% for cat, items in stats.items() %}
-                        <div class="cat-title">// CATEGORY: {{ cat }}</div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                            {% for s in items %}
-                            <div class="data-card">
-                                <div style="font-size: 7px; color: #008f11; margin-bottom: 2px;">{{ s.label }}</div>
-                                <div style="font-size: 1rem; font-weight: bold;">
-                                    {{ s.val }} {{ s.unit }}
-                                    {% if s.delta != 0 %}
-                                    <span class="{% if s.delta > 0 %}trend-up{% else %}trend-down{% endif %}" style="font-size: 8px;">({% if s.delta > 0 %}+{% endif %}{{ "%.2f"|format(s.delta) }})</span>
-                                    {% endif %}
-                                </div>
+                    <div class="box"><div class="box-label">ENVIRONMENTAL</div><div class="box-content"><div class="metric-big">{{ tel.temp_f if tel else '--' }}°F</div></div></div>
+                    <div class="box"><div class="box-label">TACTICAL MAP</div><div class="box-content" style="padding:0; height:350px;"><iframe src="data:text/html;base64,{{ map_data }}" style="width:100%; height:100%; border:none;"></iframe></div></div>
+                    
+                    <div class="box blue">
+                        <div class="box-label">MESH NETWORK (915MHZ)</div>
+                        <div class="box-content">
+                            {% for m in mesh[:8] %}
+                            <div class="stat-row">
+                                <span>{{ m.name or m.short or 'UNK' }}</span>
+                                <span style="color:#fff">{{ m.rssi }}dBm | {{ m.snr }}SNR</span>
                             </div>
                             {% endfor %}
                         </div>
-                        {% endfor %}
                     </div>
+
+                    <div class="box"><div class="box-label">HYDROLOGY</div><div class="box-content">
+                        {% for r in rivers %}
+                        <div class="stat-row">
+                            <span>{{ r.name[:20] }}</span>
+                            <span>
+                                {{ r.val }} {{ r.unit }}
+                                {% if r.delta > 0 %}<span style="color: #ff4444; font-size: 0.8em; margin-left: 5px;">▲ {{ "%.2f"|format(r.delta) }}</span>
+                                {% elif r.delta < 0 %}<span style="color: #00ff41; font-size: 0.8em; margin-left: 5px;">▼ {{ "%.2f"|format(r.delta|abs) }}</span>
+                                {% else %}<span style="color: #8b949e; font-size: 0.8em; margin-left: 5px;">-</span>{% endif %}
+                            </span>
+                        </div>
+                        {% endfor %}
+                    </div></div>
                 </div>
 
-                <!-- RIGHT SIDEBAR: SIGNALS & SOFTWARE -->
                 <div class="col">
-                    <div class="box"><div class="box-label">AIRSPACE DENSITY</div><div class="metric-big">{{ tel.aircraft_count }}</div></div>
-                    <div class="box" style="height: 400px;">
-                        <div class="box-label">SIGINT SPECTRUM (ALL DETECTED PEAKS)</div>
-                        {% for f in rf %}<div class="stat-row"><span class="stat-label">{{ f.freq }} MHZ</span><span>{{ f.db }} DB <span style="color:#ffff00">({% if f.delta > 0 %}+{% endif %}{{ "%.2f"|format(f.delta) }})</span></span></div>{% endfor %}
+                    <div class="box" style="border-color: var(--alert-red);">
+                        <div class="box-label" style="color:var(--alert-red); border-color:var(--alert-red);">THREAT LOG</div>
+                        <div class="box-content" style="max-height: 120px;">
+                            {% for a in alerts[:5] %}<div style="color:var(--alert-red); margin-bottom:5px; border-bottom:1px solid rgba(255,49,49,0.1);">>> {{ a.message }}</div>{% endfor %}
+                        </div>
                     </div>
-                    <div class="box">
-                        <div class="box-label">SYSTEM SOFTWARE ARSENAL</div>
-                        {% for s in sw %}<div class="stat-row"><span class="stat-label">{{ s.manager }}</span><span>{{ s.count }} PKGS <span style="color:#ffff00">({% if s.delta > 0 %}+{% endif %}{{ s.delta }})</span></span></div>{% endfor %}
+
+                    <div class="box"><div class="box-label">ACTIVE AIRCRAFT (ADS-B)</div>
+                        <div class="box-content" style="max-height: 150px;">
+                            {% for f in flights[:8] %}
+                            <div class="stat-row"><span>FLIGHT {{ f.callsign }}</span><span style="color:#fff">{{ f.alt }} FT</span></div>
+                            {% endfor %}
+                            {% if not flights %}<div class="stat-row"><span>NO TARGETS IN SECTOR</span></div>{% endif %}
+                        </div>
                     </div>
-                    <div class="box" style="border-color: #008f11; color: #008f11;">
-                        <div class="box-label" style="border-color: #008f11;">SYSTEM HEALTH</div>
-                        <div style="font-size: 8px;">CORE UPTIME: 312H 14M<br>DB SIZE: SQLITE LOCAL<br>INTEGRITY: 100% NOMINAL</div>
+
+                    <div class="box"><div class="box-label">802.11 NETWORKS (WIFI)</div>
+                        <div class="box-content" style="max-height: 150px;">
+                            {% for w in wifi %}
+                            <div class="stat-row"><span style="font-family: monospace;">{{ w.id[:15] }}</span><span style="color:#fff">{{ w.details }}</span></div>
+                            {% endfor %}
+                            {% if not wifi %}<div class="stat-row"><span>NO WIFI DATA</span></div>{% endif %}
+                        </div>
                     </div>
+
+                    <div class="box"><div class="box-label">BLE BEACONS</div>
+                        <div class="box-content" style="max-height: 150px;">
+                            {% for b in ble %}
+                            <div class="stat-row"><span>{{ b.name[:15] }}</span><span style="color:#fff">{{ b.rssi }}dBm</span></div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="box"><div class="box-label">SIGINT SPECTRUM</div><div class="box-content">
+                        {% for f in rf %}<div class="stat-row"><span>{{ f.freq }} MHZ</span><span>{{ f.db }} DB</span></div>{% endfor %}
+                    </div></div>
                 </div>
             </div>
-        </body>
-        </html>
+        </body></html>
         """)
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         html = template.render(
             css=report_css,
+            db_stats=db_stats,
             tel=curr_tel,
             rivers=latest_rivers,
             rf=processed_rf,
-            sw=latest_sw,
-            stats=final_stats,
             alerts=alerts,
             now=now_str,
-            version="0.38.0",
+            map_data=map_b64,
+            mesh=mesh_nodes,
+            ble=ble_intel,
+            wifi=wifi_intel,
+            flights=flights,
         )
-
-        fname = "tactical_intelligence_briefing.html"
-        with open(fname, "w") as f:
+        with open("tactical_intelligence_briefing.html", "w") as f:
             f.write(html)
+
         console.print(
-            f"[bold green]Total Intelligence Wall forged: {fname}[/bold green]"
+            "[bold green]Aura-Integrated HUD forged: tactical_intelligence_briefing.html[/bold green]"
         )
         if open_browser:
             import subprocess
 
             try:
-                subprocess.run(["xdg-open", fname], check=False)
+                subprocess.Popen(
+                    ["xdg-open", "tactical_intelligence_briefing.html"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
             except Exception:
                 pass
+        pass
 
     asyncio.run(_report())
+
+
+@app.command()
+def stats(
+    category: Optional[str] = typer.Option(None, help="Filter by category."),
+    limit: int = typer.Option(100, help="Limit output results."),
+):
+    """View all extracted statistics with their full context in the terminal."""
+    from rich.table import Table
+
+    async def _stats():
+        async with async_session() as session:
+            stmt = select(Statistic).order_by(desc(Statistic.timestamp))  # type: ignore
+            if category:
+                stmt = stmt.where(Statistic.category == category.upper())  # type: ignore
+            stmt = stmt.limit(limit)
+
+            results = (await session.execute(stmt)).scalars().all()
+            if not results:
+                console.print("[yellow]No statistics found.[/yellow]")
+                return
+
+            table = Table(
+                title="[bold green]RADAR EXTRACTED INTELLIGENCE LEDGER[/bold green]"
+            )
+            table.add_column("TIMESTAMP", style="dim")
+            table.add_column("CATEGORY", style="bold cyan")
+            table.add_column("LABEL", style="bold white")
+            table.add_column("VALUE", justify="right", style="bold green")
+            table.add_column("CONTEXT", style="dim", max_width=60)
+
+            for s in results:
+                table.add_row(
+                    s.timestamp.strftime("%Y-%m-%d %H:%M"),
+                    s.category,
+                    s.label,
+                    f"{s.value} {s.unit or ''}",
+                    s.description or "N/A",
+                )
+            console.print(table)
+        pass
+
+    asyncio.run(_stats())
 
 
 @app.command()
@@ -885,37 +993,52 @@ def map():
     import re
 
     async def _map():
+        from neo4j import GraphDatabase
+
         console.print("[bold blue]Generating Offline Tactical Map...[/bold blue]")
-        # Base map centered exactly on 1539 Button Hill Road, Tioga, PA 16946
-        tioga_coords = [41.9168, -77.1042]
+        tioga_coords = settings.HOME_COORDS
         m = folium.Map(location=tioga_coords, zoom_start=7, tiles="CartoDB positron")
 
-        # Add the 150-mile strategic sector geofence (150 miles = 241,401 meters)
         folium.Circle(
-            radius=241401,
+            radius=settings.SECTOR_RADIUS_MILES * 1609.34,
             location=tioga_coords,
-            popup="150-Mile Strategic Sector",
+            popup=f"{settings.SECTOR_RADIUS_MILES}-Mile Strategic Sector",
             color="#3186cc",
             fill=True,
             fill_color="#3186cc",
             fill_opacity=0.1,
         ).add_to(m)
 
-        # Add a precise home pin
         folium.Marker(
             tioga_coords,
             popup="1539 Button Hill Road (Home Base)",
             icon=folium.Icon(color="green", icon="home"),
         ).add_to(m)
+        # Add Mesh Nodes to Map
+        try:
+            driver = GraphDatabase.driver(
+                "bolt://localhost:7687", auth=("neo4j", "testpass123")
+            )
+            with driver.session() as session:
+                m_nodes = session.run(
+                    "MATCH (m:MeshNode) WHERE m.lat IS NOT NULL RETURN m"
+                ).data()
+                for node in m_nodes:
+                    n = node["m"]
+                    folium.Marker(
+                        [n["lat"], n["lon"]],
+                        popup=f"Mesh: {n.get('name', 'Unknown')} ({n.get('shortName', '?')})<br>SNR: {n.get('snr', 0)}dB",
+                        icon=folium.Icon(color="blue", icon="rss", prefix="fa"),
+                    ).add_to(m)
+            driver.close()
+        except Exception:
+            pass
 
         async with async_session() as session:
-            # 1. Look for ADS-B coordinates in SITREPs
             stmt = select(Signal).where(Signal.title.contains("SITREP")).limit(100)
             sitreps = (await session.execute(stmt)).scalars().all()
 
             for s in sitreps:
-                # Naive coordinate extraction for demo purposes
-                # We expect lines like: - Flight UAL450 at 38000ft (Lat: 41.5, Lon: -76.8)
                 matches = re.finditer(
                     r"Lat:\s*([\-\d\.]+),\s*Lon:\s*([\-\d\.]+)", s.content
                 )
@@ -927,22 +1050,10 @@ def map():
                         icon=folium.Icon(color="red", icon="plane"),
                     ).add_to(m)
 
-            # 2. Add fixed grid infrastructure from database config
-            # (Mocked for demonstration, would normally query a static infrastructure table)
-            folium.Marker(
-                [41.9, -77.2],
-                popup="Water Treatment",
-                icon=folium.Icon(color="blue", icon="tint"),
-            ).add_to(m)
-            folium.Marker(
-                [41.7, -77.0],
-                popup="Substation Alpha",
-                icon=folium.Icon(color="orange", icon="bolt"),
-            ).add_to(m)
-
         map_file = "radar_map.html"
         m.save(map_file)
         console.print(f"[bold green]Map generated at: {map_file}[/bold green]")
+        pass
 
     asyncio.run(_map())
 
@@ -972,7 +1083,7 @@ def serve(port: int = typer.Option(8080, help="Port to run the sync server on.")
                 .where(Signal.title.contains("SITREP"))
                 .order_by(desc(Signal.date))
                 .limit(5)
-            )
+            )  # type: ignore
             signals = (await session.execute(stmt)).scalars().all()
             return JSONResponse(
                 {
@@ -988,7 +1099,7 @@ def serve(port: int = typer.Option(8080, help="Port to run the sync server on.")
         async with async_session() as session:
             stmt = (
                 select(TacticalAlert).order_by(desc(TacticalAlert.created_at)).limit(10)
-            )
+            )  # type: ignore
             alerts = (await session.execute(stmt)).scalars().all()
             return JSONResponse(
                 {
@@ -1006,9 +1117,6 @@ def serve(port: int = typer.Option(8080, help="Port to run the sync server on.")
 
     console.print(
         f"[bold green]Starting Radar Mesh Node on port {port}...[/bold green]"
-    )
-    console.print(
-        "[dim]Other devices on your network can sync from http://<your-ip>:{port}/api/sync[/dim]"
     )
     uvicorn.run(api, host="0.0.0.0", port=port, log_level="warning")
 
@@ -1031,6 +1139,7 @@ def init():
         )
         await init_db()
         console.print("[bold green]RADAR SYSTEM READY - DATABASE ONLINE[/bold green]")
+        pass
 
     asyncio.run(_init())
 
